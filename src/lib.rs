@@ -1,4 +1,5 @@
 pub mod api;
+pub mod blaze;
 pub mod servers;
 pub mod update;
 

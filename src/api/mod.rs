@@ -55,7 +55,7 @@ pub enum ServerStreamError {
 /// * base_url    - The server base URL (Connection URL)
 pub async fn create_server_stream(
     http_client: reqwest::Client,
-    base_url: Url,
+    base_url: &Url,
 ) -> Result<Upgraded, ServerStreamError> {
     // Create the upgrade endpoint URL
     let endpoint_url: Url = base_url
