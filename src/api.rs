@@ -294,8 +294,8 @@ pub async fn publish_telemetry_event(
 ) -> Result<(), reqwest::Error> {
     // Create the upgrade endpoint URL
     let endpoint_url: Url = base_url
-        .join(UPGRADE_ENDPOINT)
-        .expect("Failed to create upgrade endpoint");
+        .join(TELEMETRY_ENDPOINT)
+        .expect("Failed to create telemetry endpoint");
 
     // Send the HTTP request and get its response
     let response = http_client.post(endpoint_url).json(&event).send().await?;
