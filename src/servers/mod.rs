@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use tokio::task::AbortHandle;
 
 pub mod blaze;
+pub mod http;
 pub mod redirector;
 pub mod telemetry;
 

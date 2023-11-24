@@ -1,7 +1,7 @@
 use crate::servers::HTTP_PORT;
 use hyper::{
     header::{self, HeaderName, HeaderValue},
-    HeaderMap,
+    Body, HeaderMap, Response,
 };
 use reqwest::Upgraded;
 use serde::Serialize;
@@ -139,4 +139,47 @@ pub async fn publish_telemetry_event(
     let _ = response.error_for_status()?;
 
     Ok(())
+}
+
+/// Errors that could occur when proxying a request
+#[derive(Debug, Error)]
+pub enum ProxyError {
+    /// Initial HTTP request failure
+    #[error("Request failed: {0}")]
+    RequestFailed(reqwest::Error),
+    /// Failed to read the response body bytes
+    #[error("Request failed: {0}")]
+    BodyFailed(reqwest::Error),
+}
+
+/// Proxies an HTTP request to the Pocket Relay server returning a
+/// hyper response that can be served
+///
+/// ## Arguments
+/// * http_client - The HTTP client to connect with
+/// * url         - The server URL to request
+pub async fn proxy_http_request(
+    http_client: &reqwest::Client,
+    url: Url,
+) -> Result<Response<Body>, ProxyError> {
+    // Send the HTTP request and get its response
+    let response = http_client
+        .get(url)
+        .send()
+        .await
+        .map_err(ProxyError::RequestFailed)?;
+
+    // Extract response status and headers before its consumed to load the body
+    let status = response.status();
+    let headers = response.headers().clone();
+
+    // Read the response body bytes
+    let body: bytes::Bytes = response.bytes().await.map_err(ProxyError::BodyFailed)?;
+
+    // Create new response from the proxy response
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
+
+    Ok(response)
 }
