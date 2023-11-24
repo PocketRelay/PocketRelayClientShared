@@ -6,6 +6,7 @@ use tokio::task::AbortHandle;
 
 pub mod blaze;
 pub mod http;
+pub mod qos;
 pub mod redirector;
 pub mod telemetry;
 
