@@ -6,6 +6,7 @@ use tokio::task::AbortHandle;
 
 pub mod blaze;
 pub mod redirector;
+pub mod telemetry;
 
 pub const REDIRECTOR_PORT: u16 = 42127;
 pub const BLAZE_PORT: u16 = 42128;

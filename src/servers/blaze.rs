@@ -31,6 +31,11 @@ pub async fn start_blaze_server(
 }
 
 /// Handler for processing BlazeSDK client connections
+///
+/// ## Arguments
+/// * client_stream - The client stream to read and write from
+/// * http_client   - The HTTP client passed around for connection upgrades
+/// * base_url      - The server base URL to connect clients to
 async fn handle(mut client_stream: TcpStream, http_client: reqwest::Client, base_url: Arc<Url>) {
     // Create a stream to the Pocket Relay server
     let mut server_stream = match create_server_stream(http_client, &base_url).await {

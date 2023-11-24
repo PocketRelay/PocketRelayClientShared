@@ -13,6 +13,7 @@ use thiserror::Error;
 use tokio::time::{error::Elapsed, timeout};
 use tokio_util::codec::Framed;
 
+/// Starts the redirector server
 pub async fn start_redirector_server() -> std::io::Result<()> {
     // Bind the local ssl socket for accepting connections
     let listener = BlazeListener::bind((Ipv4Addr::LOCALHOST, REDIRECTOR_PORT)).await?;
@@ -28,6 +29,7 @@ pub async fn start_redirector_server() -> std::io::Result<()> {
     }
 }
 
+/// Errors that could occur during the redirection process
 #[derive(Debug, Error)]
 pub enum RedirectError {
     /// Error while accepting the ssl connection
@@ -48,6 +50,7 @@ pub enum RedirectError {
 /// the connection as timed out
 const REDIRECT_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Handler for processing redirector connections
 async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
     let (stream, _) = client_accept.finish_accept().await?;
     let mut framed = Framed::new(stream, FireCodec::default());
@@ -84,7 +87,7 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
 }
 
 /// Response for redirecting to a local instance
-pub struct LocalInstanceResponse;
+struct LocalInstanceResponse;
 
 impl TdfSerialize for LocalInstanceResponse {
     fn serialize<S: tdf::prelude::TdfSerializer>(&self, w: &mut S) {

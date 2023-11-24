@@ -4,6 +4,7 @@ use hyper::{
     HeaderMap,
 };
 use reqwest::Upgraded;
+use serde::Serialize;
 use thiserror::Error;
 use url::Url;
 
@@ -106,4 +107,36 @@ pub async fn create_server_stream(
         .upgrade()
         .await
         .map_err(ServerStreamError::UpgradeFailure)
+}
+
+/// Key value pair message for telemetry events
+#[derive(Serialize)]
+pub struct TelemetryEvent {
+    /// The telemetry values
+    pub values: Vec<(String, String)>,
+}
+
+/// Publishes a new telemetry event to the Pocket Relay server
+///
+/// ## Arguments
+/// * http_client - The HTTP client to connect with
+/// * base_url    - The server base URL (Connection URL)
+/// * event       - The event to publish
+pub async fn publish_telemetry_event(
+    http_client: &reqwest::Client,
+    base_url: &Url,
+    event: TelemetryEvent,
+) -> Result<(), reqwest::Error> {
+    // Create the upgrade endpoint URL
+    let endpoint_url: Url = base_url
+        .join(UPGRADE_ENDPOINT)
+        .expect("Failed to create upgrade endpoint");
+
+    // Send the HTTP request and get its response
+    let response = http_client.post(endpoint_url).json(&event).send().await?;
+
+    // Handle server error responses
+    let _ = response.error_for_status()?;
+
+    Ok(())
 }
