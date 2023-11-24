@@ -2,7 +2,7 @@
 
 use super::{spawn_server_task, BLAZE_PORT};
 use crate::api::create_server_stream;
-use log::error;
+use log::{debug, error};
 use std::{net::Ipv4Addr, sync::Arc};
 use tokio::{
     io::copy_bidirectional,
@@ -37,6 +37,8 @@ pub async fn start_blaze_server(
 /// * http_client   - The HTTP client passed around for connection upgrades
 /// * base_url      - The server base URL to connect clients to
 async fn handle(mut client_stream: TcpStream, http_client: reqwest::Client, base_url: Arc<Url>) {
+    debug!("Starting blaze connection");
+
     // Create a stream to the Pocket Relay server
     let mut server_stream = match create_server_stream(http_client, &base_url).await {
         Ok(stream) => stream,
@@ -45,6 +47,8 @@ async fn handle(mut client_stream: TcpStream, http_client: reqwest::Client, base
             return;
         }
     };
+
+    debug!("Blaze connection linked");
 
     // Copy the data between the streams
     let _ = copy_bidirectional(&mut client_stream, &mut server_stream).await;

@@ -6,7 +6,7 @@ use super::{spawn_server_task, BLAZE_PORT, REDIRECTOR_PORT};
 use crate::blaze::{FireCodec, FireFrame};
 use blaze_ssl_async::{BlazeAccept, BlazeListener};
 use futures::{SinkExt, TryStreamExt};
-use log::error;
+use log::{debug, error};
 use std::{io, net::Ipv4Addr, time::Duration};
 use tdf::TdfSerialize;
 use thiserror::Error;
@@ -68,8 +68,12 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
         const COMMAND_GET_SERVER_INSTANCE: u16 = 0x1;
 
         // Respond to unexpected packets with empty responses
-        if header.component != COMPONENT_REDIRECTOR && header.command != COMMAND_GET_SERVER_INSTANCE
+        if header.component != COMPONENT_REDIRECTOR || header.command != COMMAND_GET_SERVER_INSTANCE
         {
+            debug!(
+                "Redirector got unexpected request {} {}",
+                header.component, header.command
+            );
             framed
                 .send(FireFrame::response_empty(header))
                 .await
@@ -77,10 +81,13 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
             continue;
         }
 
+        debug!("Redirector responding");
+
         framed
             .send(FireFrame::response(header, LocalInstanceResponse))
             .await
             .map_err(RedirectError::WriteError)?;
+        break;
     }
 
     Ok(())
@@ -95,7 +102,7 @@ impl TdfSerialize for LocalInstanceResponse {
 
         // Encode the net address portion
         w.group(b"VALU", |w| {
-            w.tag_u32(b"IP", Ipv4Addr::LOCALHOST.into());
+            w.tag_u32(b"IP", u32::from_be_bytes([127, 0, 0, 1]));
             w.tag_u16(b"PORT", BLAZE_PORT);
         });
 

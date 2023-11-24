@@ -172,8 +172,8 @@ impl Encoder<FireFrame> for FireCodec {
         dst.put_u16(header.component);
         dst.put_u16(header.command);
         dst.put_u16(header.error);
-        dst.put_u8(header.ty as u8);
-        dst.put_u8(header.options);
+        dst.put_u8((header.ty as u8) << 4);
+        dst.put_u8(header.options << 4);
         dst.put_u16(header.seq);
 
         dst.extend_from_slice(&item.contents);
