@@ -1,11 +1,15 @@
+use std::path::Path;
+
 use crate::servers::HTTP_PORT;
 use hyper::{
     header::{self, HeaderName, HeaderValue},
     Body, HeaderMap, Response,
 };
-use reqwest::Upgraded;
+use log::error;
+use reqwest::{Client, Identity, Upgraded};
 use serde::Serialize;
 use thiserror::Error;
+use tokio::fs::read;
 use url::Url;
 
 /// Endpoint used for requesting the server details
@@ -32,6 +36,43 @@ mod headers {
     /// Legacy header telling the server to use local http routing
     /// (Existing only for backwards compat, this is the default behavior for newer versions)
     pub const LEGACY_LOCAL_HTTP: &str = "x-pocket-relay-local-http";
+}
+
+/// Creates a new HTTP client to use, will use the client identity
+/// if one is provided
+///
+/// ## Arguments
+/// * identity - Optional identity for the client to use
+pub fn create_http_client(identity: Option<Identity>) -> Result<Client, reqwest::Error> {
+    let mut builder = Client::builder().user_agent(USER_AGENT);
+
+    if let Some(identity) = identity {
+        builder = builder.identity(identity);
+    }
+
+    builder.build()
+}
+
+#[derive(Debug, Error)]
+pub enum ClientIdentityError {
+    #[error("Failed to read identity: {0}")]
+    Read(#[from] std::io::Error),
+    #[error("Failed to create identity: {0}")]
+    Create(#[from] reqwest::Error),
+}
+
+/// Attempts to read a client identity from the provided file path,
+/// the file must be a .p12 / .pfx (PKCS12) format containing a
+/// certificate and private key with a blank password
+///
+/// ## Arguments
+/// * path - The path to read the identity from
+pub async fn read_client_identity(path: &Path) -> Result<Identity, ClientIdentityError> {
+    // Read the identity file bytes
+    let bytes = read(path).await.map_err(ClientIdentityError::Read)?;
+
+    // Parse the identity from the file bytes
+    Identity::from_pkcs12_der(&bytes, "").map_err(ClientIdentityError::Create)
 }
 
 /// Errors that could occur when creating a server stream
@@ -65,7 +106,6 @@ pub async fn create_server_stream(
 
     // Headers to provide when upgrading
     let headers: HeaderMap<HeaderValue> = [
-        (header::USER_AGENT, HeaderValue::from_static(USER_AGENT)),
         (header::CONNECTION, HeaderValue::from_static("Upgrade")),
         (header::UPGRADE, HeaderValue::from_static("blaze")),
         // Headers for legacy compatability
