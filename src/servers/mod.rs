@@ -19,6 +19,12 @@ pub const HTTP_PORT: u16 = 42131;
 // Shared set of abort handles to server tasks
 static SERVER_TASK_COLLECTION: Mutex<Vec<AbortHandle>> = Mutex::new(Vec::new());
 
+/// Returns whether there are running server tasks
+pub fn has_server_tasks() -> bool {
+    let values = &mut *SERVER_TASK_COLLECTION.lock();
+    !values.is_empty()
+}
+
 /// Spawns a server related task future onto tokios runtime and
 /// adds the abort handle for the task to the task collection
 ///

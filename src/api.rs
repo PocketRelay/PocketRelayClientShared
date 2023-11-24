@@ -1,15 +1,14 @@
-use std::path::Path;
-
-use crate::servers::HTTP_PORT;
+use crate::{servers::HTTP_PORT, MIN_SERVER_VERSION};
 use hyper::{
     header::{self, HeaderName, HeaderValue},
     Body, HeaderMap, Response,
 };
 use log::error;
 use reqwest::{Client, Identity, Upgraded};
-use serde::Serialize;
+use semver::Version;
+use serde::{Deserialize, Serialize};
+use std::{path::Path, str::FromStr, sync::Arc};
 use thiserror::Error;
-use tokio::fs::read;
 use url::Url;
 
 /// Endpoint used for requesting the server details
@@ -67,12 +66,138 @@ pub enum ClientIdentityError {
 ///
 /// ## Arguments
 /// * path - The path to read the identity from
-pub async fn read_client_identity(path: &Path) -> Result<Identity, ClientIdentityError> {
+pub fn read_client_identity(path: &Path) -> Result<Identity, ClientIdentityError> {
     // Read the identity file bytes
-    let bytes = read(path).await.map_err(ClientIdentityError::Read)?;
+    let bytes = std::fs::read(path).map_err(ClientIdentityError::Read)?;
 
     // Parse the identity from the file bytes
     Identity::from_pkcs12_der(&bytes, "").map_err(ClientIdentityError::Create)
+}
+
+/// Details provided by the server. These are the only fields
+/// that we need the rest are ignored by this client.
+#[derive(Deserialize)]
+struct ServerDetails {
+    /// The Pocket Relay version of the server
+    version: Version,
+    /// Server identifier checked to ensure its a proper server
+    #[serde(default)]
+    ident: Option<String>,
+}
+
+/// Data from completing a lookup contains the resolved address
+/// from the connection to the server as well as the server
+/// version obtained from the server
+#[derive(Debug, Clone)]
+pub struct LookupData {
+    /// Server url
+    pub url: Arc<Url>,
+    /// The server version
+    pub version: Version,
+}
+
+/// Errors that can occur while looking up a server
+#[derive(Debug, Error)]
+pub enum LookupError {
+    /// The server url was invalid
+    #[error("Invalid Connection URL: {0}")]
+    InvalidHostTarget(#[from] url::ParseError),
+    /// The server connection failed
+    #[error("Failed to connect to server: {0}")]
+    ConnectionFailed(reqwest::Error),
+    /// The server gave an invalid response likely not a PR server
+    #[error("Server replied with error response: {0}")]
+    ErrorResponse(reqwest::Error),
+    /// The server gave an invalid response likely not a PR server
+    #[error("Invalid server response: {0}")]
+    InvalidResponse(reqwest::Error),
+    /// Server wasn't a valid pocket relay server
+    #[error("Server identifier was incorrect (Not a PocketRelay server?)")]
+    NotPocketRelay,
+    /// Server version is too old
+    #[error("Server version is too outdated ({0}) this client requires servers of version {1} or greater")]
+    ServerOutdated(Version, Version),
+}
+
+/// Attempts to lookup a server at the provided url to see if
+/// its a Pocket Relay server
+pub async fn lookup_server(
+    http_client: reqwest::Client,
+    host: String,
+) -> Result<LookupData, LookupError> {
+    let mut url = String::new();
+
+    // Whether a scheme was inferred
+    let mut inserted_scheme = false;
+
+    // Fill in missing scheme portion
+    if !host.starts_with("http://") && !host.starts_with("https://") {
+        url.push_str("http://");
+
+        inserted_scheme = true;
+    }
+
+    url.push_str(&host);
+
+    // Ensure theres a trailing slash (URL path will be interpeted incorrectly without)
+    if !url.ends_with('/') {
+        url.push('/');
+    }
+
+    let mut url = Url::from_str(&url)?;
+
+    // Update scheme to be https if the 443 port was specified and the scheme was inferred as http://
+    if url.port().is_some_and(|port| port == 443) && inserted_scheme {
+        let _ = url.set_scheme("https");
+    }
+
+    let info_url = url
+        .join(DETAILS_ENDPOINT)
+        .expect("Failed to create server details URL");
+
+    let response = http_client
+        .get(info_url)
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(LookupError::ConnectionFailed)?;
+
+    #[cfg(debug_assertions)]
+    {
+        use log::debug;
+
+        debug!("Response Status: {}", response.status());
+        debug!("HTTP Version: {:?}", response.version());
+        debug!("Content Length: {:?}", response.content_length());
+        debug!("HTTP Headers: {:?}", response.headers());
+    }
+
+    let response = response
+        .error_for_status()
+        .map_err(LookupError::ErrorResponse)?;
+
+    let details = response
+        .json::<ServerDetails>()
+        .await
+        .map_err(LookupError::InvalidResponse)?;
+
+    // Handle invalid server ident
+    if details.ident.is_none() || details.ident.is_some_and(|value| value != SERVER_IDENT) {
+        return Err(LookupError::NotPocketRelay);
+    }
+
+    // Ensure the server is a supported version
+    if details.version < MIN_SERVER_VERSION {
+        return Err(LookupError::ServerOutdated(
+            details.version,
+            MIN_SERVER_VERSION,
+        ));
+    }
+
+    Ok(LookupData {
+        url: Arc::new(url),
+        version: details.version,
+    })
 }
 
 /// Errors that could occur when creating a server stream

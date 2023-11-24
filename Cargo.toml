@@ -55,8 +55,5 @@ futures = "0.3"
 # Error derive macros
 thiserror = "1"
 
-# Platform native dialogs
-native-dialog = "0.7"
-
 # Locking primitives
 parking_lot = "0.12.1"
