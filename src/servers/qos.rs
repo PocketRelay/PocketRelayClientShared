@@ -27,11 +27,16 @@ pub async fn start_qos_server() -> std::io::Result<()> {
         // Create an array from the data that was recieved
         let buffer: Box<[u8]> = Box::from(&buffer[..count]);
 
-        spawn_server_task(handle(socket.clone(), addr, buffer))
+        spawn_server_task(handle(socket.clone(), addr, buffer));
     }
 }
 
-/// Handles a QoS connection
+/// Handles a Quality of Service connection
+///
+/// ## Arguments
+/// * `socket`      - The UDP socket used for sending the responses
+/// * `socket_addr` - The socket address of the connection (Target for the response)
+/// * `buffer`      - Buffer of bytes recieved from the socket
 async fn handle(socket: Arc<UdpSocket>, socket_addr: SocketAddr, buffer: Box<[u8]>) {
     // Extract the IPv4 address from the socket address (Fallback to 0.0.0.0)
     let socket_ip = match socket_addr {
@@ -99,15 +104,15 @@ async fn public_address() -> Option<Ipv4Addr> {
 
     // Try all addresses using the first valid value
     for address in addresses {
-        let response = match reqwest::get(address).await {
-            Ok(value) => value,
-            Err(_) => continue,
+        let Ok(response) = reqwest::get(address).await else {
+            continue;
         };
 
-        let ip = match response.text().await {
-            Ok(value) => value.trim().replace('\n', ""),
-            Err(_) => continue,
+        let Ok(response) = response.text().await else {
+            continue;
         };
+
+        let ip = response.trim().replace('\n', "");
 
         if let Ok(parsed) = ip.parse() {
             value = Some(parsed);
@@ -119,7 +124,7 @@ async fn public_address() -> Option<Ipv4Addr> {
     // we don't have internet lets try using our local address
     if value.is_none() {
         if let Ok(IpAddr::V4(addr)) = local_ip_address::local_ip() {
-            value = Some(addr)
+            value = Some(addr);
         }
     }
 

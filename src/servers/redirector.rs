@@ -3,7 +3,7 @@
 //! servers as localhost
 
 use super::{spawn_server_task, BLAZE_PORT, REDIRECTOR_PORT};
-use crate::blaze::{FireCodec, FireFrame};
+use crate::fire::{FireCodec, Frame};
 use blaze_ssl_async::{BlazeAccept, BlazeListener};
 use futures::{SinkExt, TryStreamExt};
 use log::{debug, error};
@@ -25,7 +25,7 @@ pub async fn start_redirector_server() -> std::io::Result<()> {
             if let Err(err) = handle(client_accept).await {
                 error!("Error while redirecting: {}", err);
             }
-        })
+        });
     }
 }
 
@@ -49,8 +49,15 @@ pub enum RedirectError {
 /// Allowed time for a redirect to occur before considering
 /// the connection as timed out
 const REDIRECT_TIMEOUT: Duration = Duration::from_secs(60);
+/// Redirector component to expect
+const COMPONENT_REDIRECTOR: u16 = 0x5;
+/// getServerInstance command to expect
+const COMMAND_GET_SERVER_INSTANCE: u16 = 0x1;
 
 /// Handler for processing redirector connections
+///
+/// ## Arguments
+/// * `client_accept` - The connecting SSL client to accept
 async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
     let (stream, _) = client_accept.finish_accept().await?;
     let mut framed = Framed::new(stream, FireCodec::default());
@@ -64,9 +71,6 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
     {
         let header = &packet.header;
 
-        const COMPONENT_REDIRECTOR: u16 = 0x5;
-        const COMMAND_GET_SERVER_INSTANCE: u16 = 0x1;
-
         // Respond to unexpected packets with empty responses
         if header.component != COMPONENT_REDIRECTOR || header.command != COMMAND_GET_SERVER_INSTANCE
         {
@@ -75,7 +79,7 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
                 header.component, header.command
             );
             framed
-                .send(FireFrame::response_empty(header))
+                .send(Frame::response_empty(header))
                 .await
                 .map_err(RedirectError::WriteError)?;
             continue;
@@ -84,7 +88,7 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
         debug!("Redirector responding");
 
         framed
-            .send(FireFrame::response(header, LocalInstanceResponse))
+            .send(Frame::response(header, LocalInstanceResponse))
             .await
             .map_err(RedirectError::WriteError)?;
         break;

@@ -5,6 +5,7 @@
 use super::HTTP_PORT;
 use crate::api::proxy_http_request;
 use hyper::{
+    http::uri::PathAndQuery,
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
 };
@@ -20,8 +21,8 @@ use url::Url;
 /// Starts the HTTP proxy server
 ///
 /// ## Arguments
-/// * http_client - The HTTP client passed around for sending the requests
-/// * base_url    - The server base URL to proxy requests to
+/// * `http_client` - The HTTP client passed around for sending the requests
+/// * `base_url`    - The server base URL to proxy requests to
 pub async fn start_http_server(
     http_client: reqwest::Client,
     base_url: Arc<Url>,
@@ -49,6 +50,13 @@ pub async fn start_http_server(
         .map_err(|err| std::io::Error::new(ErrorKind::Other, err))
 }
 
+/// Handles an HTTP request from the HTTP server proxying it along
+/// to the Pocket Relay server
+///
+/// ## Arguments
+/// * `request`     - The HTTP request
+/// * `http_client` - The HTTP client to proxy the request with
+/// * `base_url`    - The server base URL (Connection URL)
 async fn handle(
     request: Request<Body>,
     http_client: reqwest::Client,
@@ -58,7 +66,8 @@ async fn handle(
         .uri()
         // Extract the path and query portion of the url
         .path_and_query()
-        .map(|value| value.as_str())
+        // Convert the path to a &str
+        .map(PathAndQuery::as_str)
         // Fallback to empty path if none is provided
         .unwrap_or_default();
 

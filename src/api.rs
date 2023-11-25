@@ -1,3 +1,5 @@
+//! API logic for HTTP requests that are sent to the Pocket Relay server
+
 use crate::{servers::HTTP_PORT, MIN_SERVER_VERSION};
 use hyper::{
     header::{self, HeaderName, HeaderValue},
@@ -41,7 +43,7 @@ mod headers {
 /// if one is provided
 ///
 /// ## Arguments
-/// * identity - Optional identity for the client to use
+/// * `identity` - Optional identity for the client to use
 pub fn create_http_client(identity: Option<Identity>) -> Result<Client, reqwest::Error> {
     let mut builder = Client::builder().user_agent(USER_AGENT);
 
@@ -52,10 +54,13 @@ pub fn create_http_client(identity: Option<Identity>) -> Result<Client, reqwest:
     builder.build()
 }
 
+/// Errors that can occur when loading the client identity
 #[derive(Debug, Error)]
 pub enum ClientIdentityError {
+    /// Failed to read the identity file
     #[error("Failed to read identity: {0}")]
     Read(#[from] std::io::Error),
+    /// Failed to create the identity
     #[error("Failed to create identity: {0}")]
     Create(#[from] reqwest::Error),
 }
@@ -65,7 +70,7 @@ pub enum ClientIdentityError {
 /// certificate and private key with a blank password
 ///
 /// ## Arguments
-/// * path - The path to read the identity from
+/// * `path` - The path to read the identity from
 pub fn read_client_identity(path: &Path) -> Result<Identity, ClientIdentityError> {
     // Read the identity file bytes
     let bytes = std::fs::read(path).map_err(ClientIdentityError::Read)?;
@@ -121,6 +126,10 @@ pub enum LookupError {
 
 /// Attempts to lookup a server at the provided url to see if
 /// its a Pocket Relay server
+///
+/// ## Arguments
+/// * `http_client` - The HTTP client to connect with
+/// * `base_url`    - The server base URL (Connection URL)
 pub async fn lookup_server(
     http_client: reqwest::Client,
     host: String,
@@ -128,13 +137,13 @@ pub async fn lookup_server(
     let mut url = String::new();
 
     // Whether a scheme was inferred
-    let mut inserted_scheme = false;
+    let mut inferred_scheme = false;
 
     // Fill in missing scheme portion
     if !host.starts_with("http://") && !host.starts_with("https://") {
         url.push_str("http://");
 
-        inserted_scheme = true;
+        inferred_scheme = true;
     }
 
     url.push_str(&host);
@@ -147,7 +156,7 @@ pub async fn lookup_server(
     let mut url = Url::from_str(&url)?;
 
     // Update scheme to be https if the 443 port was specified and the scheme was inferred as http://
-    if url.port().is_some_and(|port| port == 443) && inserted_scheme {
+    if url.port().is_some_and(|port| port == 443) && inferred_scheme {
         let _ = url.set_scheme("https");
     }
 
@@ -155,6 +164,7 @@ pub async fn lookup_server(
         .join(DETAILS_ENDPOINT)
         .expect("Failed to create server details URL");
 
+    // Send the HTTP request and get its response
     let response = http_client
         .get(info_url)
         .header(header::ACCEPT, "application/json")
@@ -162,6 +172,7 @@ pub async fn lookup_server(
         .await
         .map_err(LookupError::ConnectionFailed)?;
 
+    // Debug printing of response details for debug builds
     #[cfg(debug_assertions)]
     {
         use log::debug;
@@ -172,10 +183,12 @@ pub async fn lookup_server(
         debug!("HTTP Headers: {:?}", response.headers());
     }
 
+    // Ensure the response wasn't a non 200 response
     let response = response
         .error_for_status()
         .map_err(LookupError::ErrorResponse)?;
 
+    // Parse the JSON serialized server details
     let details = response
         .json::<ServerDetails>()
         .await
@@ -218,8 +231,8 @@ pub enum ServerStreamError {
 /// with the Pocket Relay server
 ///
 /// ## Arguments
-/// * http_client - The HTTP client to connect with
-/// * base_url    - The server base URL (Connection URL)
+/// * `http_client` - The HTTP client to connect with
+/// * `base_url`    - The server base URL (Connection URL)
 pub async fn create_server_stream(
     http_client: reqwest::Client,
     base_url: &Url,
@@ -284,15 +297,15 @@ pub struct TelemetryEvent {
 /// Publishes a new telemetry event to the Pocket Relay server
 ///
 /// ## Arguments
-/// * http_client - The HTTP client to connect with
-/// * base_url    - The server base URL (Connection URL)
-/// * event       - The event to publish
+/// * `http_client` - The HTTP client to connect with
+/// * `base_url`    - The server base URL (Connection URL)
+/// * `event`       - The event to publish
 pub async fn publish_telemetry_event(
     http_client: &reqwest::Client,
     base_url: &Url,
     event: TelemetryEvent,
 ) -> Result<(), reqwest::Error> {
-    // Create the upgrade endpoint URL
+    // Create the telemetry endpoint URL
     let endpoint_url: Url = base_url
         .join(TELEMETRY_ENDPOINT)
         .expect("Failed to create telemetry endpoint");
@@ -321,8 +334,8 @@ pub enum ProxyError {
 /// hyper response that can be served
 ///
 /// ## Arguments
-/// * http_client - The HTTP client to connect with
-/// * url         - The server URL to request
+/// * `http_client` - The HTTP client to connect with
+/// * `url`         - The server URL to request
 pub async fn proxy_http_request(
     http_client: &reqwest::Client,
     url: Url,

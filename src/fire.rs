@@ -1,4 +1,4 @@
-//! Minimal blaze packet parsing and creation implementation
+//! Minimal fire packet parsing and creation implementation
 //! this supports the very minimal required features
 
 use bytes::{Buf, BufMut, Bytes};
@@ -23,7 +23,6 @@ pub enum FrameType {
 impl From<u8> for FrameType {
     fn from(value: u8) -> Self {
         match value {
-            0x0 => FrameType::Request,
             0x1 => FrameType::Response,
             0x2 => FrameType::Notify,
             0x3 => FrameType::Error,
@@ -32,8 +31,8 @@ impl From<u8> for FrameType {
     }
 }
 
-/// Structure of the header for a frame
-pub struct FireFrameHeader {
+/// The header for a fire frame
+pub struct FrameHeader {
     /// The length of the frame contents
     pub length: usize,
     /// The component that should handle this frame
@@ -51,22 +50,23 @@ pub struct FireFrameHeader {
 }
 
 /// Packet framing structure
-pub struct FireFrame {
+pub struct Frame {
     /// Header for the frame
-    pub header: FireFrameHeader,
+    pub header: FrameHeader,
     /// The encoded byte contents of the packet
     pub contents: Bytes,
 }
 
-impl FireFrame {
-    pub fn response<V>(header: &FireFrameHeader, value: V) -> FireFrame
-    where
-        V: TdfSerialize,
-    {
-        let contents = Bytes::from(serialize_vec(&value));
-
-        FireFrame {
-            header: FireFrameHeader {
+impl Frame {
+    /// Creates a new response frame responding to the provided `header`
+    /// with the bytes contents of `value`
+    ///
+    /// ## Arguments
+    /// * `header`   - The header of the frame to respond to
+    /// * `contents` - The bytes of the frame
+    pub fn response_raw(header: &FrameHeader, contents: Bytes) -> Frame {
+        Frame {
+            header: FrameHeader {
                 length: contents.len(),
                 component: header.component,
                 command: header.command,
@@ -79,21 +79,27 @@ impl FireFrame {
         }
     }
 
-    pub fn response_empty(header: &FireFrameHeader) -> FireFrame {
-        let contents = Bytes::new();
+    /// Creates a new response frame responding to the provided `header`
+    /// with the encoded contents of the `value`
+    ///
+    /// ## Arguments
+    /// * `header` - The header of the frame to respond to
+    /// * `value`  - The value to encode as the frame bytes
+    #[inline]
+    pub fn response<V>(header: &FrameHeader, value: V) -> Frame
+    where
+        V: TdfSerialize,
+    {
+        Self::response_raw(header, Bytes::from(serialize_vec(&value)))
+    }
 
-        FireFrame {
-            header: FireFrameHeader {
-                length: contents.len(),
-                component: header.component,
-                command: header.command,
-                error: 0,
-                ty: FrameType::Response,
-                options: 0,
-                seq: header.seq,
-            },
-            contents,
-        }
+    /// Creates a new response frame responding to the provided `header`
+    /// with empty contents
+    ///
+    /// ## Arguments
+    /// * `header` - The header of the frame to respond to
+    pub fn response_empty(header: &FrameHeader) -> Frame {
+        Self::response_raw(header, Bytes::new())
     }
 }
 
@@ -101,7 +107,7 @@ impl FireFrame {
 #[derive(Default)]
 pub struct FireCodec {
     /// Incomplete frame thats currently being read
-    current_frame: Option<FireFrameHeader>,
+    current_frame: Option<FrameHeader>,
 }
 
 impl FireCodec {
@@ -112,7 +118,7 @@ impl Decoder for FireCodec {
     // The codec doesn't have any errors of its own so IO error is used
     type Error = io::Error;
     // The decoder provides fire frames
-    type Item = FireFrame;
+    type Item = Frame;
 
     fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let current_frame = if let Some(current_frame) = self.current_frame.as_mut() {
@@ -133,7 +139,7 @@ impl Decoder for FireCodec {
             let options: u8 = src.get_u8() >> 4;
             let seq: u16 = src.get_u16();
 
-            let header = FireFrameHeader {
+            let header = FrameHeader {
                 length,
                 component,
                 command,
@@ -156,17 +162,17 @@ impl Decoder for FireCodec {
         // Take all the frame bytes
         let buffer = src.split_to(header.length);
 
-        Ok(Some(FireFrame {
+        Ok(Some(Frame {
             header,
             contents: buffer.freeze(),
         }))
     }
 }
 
-impl Encoder<FireFrame> for FireCodec {
+impl Encoder<Frame> for FireCodec {
     type Error = io::Error;
 
-    fn encode(&mut self, item: FireFrame, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, item: Frame, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
         let header = item.header;
         dst.put_u16(header.length as u16);
         dst.put_u16(header.component);

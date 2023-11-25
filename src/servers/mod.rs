@@ -10,10 +10,15 @@ pub mod qos;
 pub mod redirector;
 pub mod telemetry;
 
+/// The port the Redirector server will bind to
 pub const REDIRECTOR_PORT: u16 = 42127;
+/// The port the Blaze server will bind to
 pub const BLAZE_PORT: u16 = 42128;
+/// The port the Telemetry server will bind to
 pub const TELEMETRY_PORT: u16 = 42129;
+/// The port the Quality of Service server will bind to
 pub const QOS_PORT: u16 = 42130;
+/// The port the HTTP server will bind to
 pub const HTTP_PORT: u16 = 42131;
 
 // Shared set of abort handles to server tasks
@@ -29,7 +34,7 @@ pub fn has_server_tasks() -> bool {
 /// adds the abort handle for the task to the task collection
 ///
 /// ## Arguments
-/// * task - The task future to spawn
+/// * `task` - The task future to spawn
 #[inline]
 pub fn spawn_server_task<F>(task: F)
 where
@@ -42,7 +47,7 @@ where
 /// Append an abort handle to the server task collection
 ///
 /// ## Arguments
-/// * handle - The abort handle for the task
+/// * `handle` - The abort handle for the task
 pub fn add_server_task(handle: AbortHandle) {
     let values = &mut *SERVER_TASK_COLLECTION.lock();
     values.push(handle);

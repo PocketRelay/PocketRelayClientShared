@@ -14,8 +14,8 @@ use url::Url;
 /// Starts the telemetry server
 ///
 /// ## Arguments
-/// * http_client - The HTTP client used to forward messages
-/// * base_url    - The server base URL to connect clients to
+/// * `http_client` - The HTTP client used to forward messages
+/// * `base_url`    - The server base URL to connect clients to
 pub async fn start_telemetry_server(
     http_client: reqwest::Client,
     base_url: Arc<Url>,
@@ -47,7 +47,7 @@ const TLM3_KEY: &[u8] = b"The truth is back in style.";
 /// stream
 ///
 /// ## Arguments
-/// * stream - The stream to decode from
+/// * `stream` - The stream to decode from
 async fn read_telemetry_event(stream: &mut TcpStream) -> std::io::Result<TelemetryEvent> {
     let length: usize = {
         // Buffer for reading the header + padding + length bytes
@@ -98,7 +98,7 @@ async fn read_telemetry_event(stream: &mut TcpStream) -> std::io::Result<Telemet
 /// Decodes a TLM3 line using the [`TLM3_KEY`]
 ///
 /// ## Arguments
-/// * input - The line to decode
+/// * `input` - The line to decode
 fn tlm3(input: &[u8]) -> String {
     input
         .splitn(2, |value| b'-'.eq(value))
@@ -115,8 +115,8 @@ fn tlm3(input: &[u8]) -> String {
 /// Applies an xor cipher over the input using the provided key
 ///
 /// ## Arguments
-/// * input - The input value to xor
-/// * key   - The key to xor with
+/// * `input` - The input value to xor
+/// * `key`   - The key to xor with
 fn xor_cipher(input: &[u8], key: &[u8]) -> Vec<u8> {
     input
         .iter()

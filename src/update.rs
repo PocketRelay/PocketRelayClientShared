@@ -31,8 +31,8 @@ pub struct GitHubReleaseAsset {
 /// Attempts to obtain the latest release from github
 ///
 /// ## Arguments
-/// * http_client - The HTTP client to make the request with
-/// * repository  - The repository to get the latest release for (e.g "PocketRelay/Client")
+/// * `http_client` - The HTTP client to make the request with
+/// * `repository`  - The repository to get the latest release for (e.g "PocketRelay/Client")
 pub async fn get_latest_release(
     http_client: &reqwest::Client,
     repository: &str,
@@ -55,8 +55,8 @@ pub async fn get_latest_release(
 /// downloaded bytes
 ///
 /// ## Arguments
-/// * http_client - The HTTP client to make the request with
-/// * asset       - The asset to download
+/// * `http_client` - The HTTP client to make the request with
+/// * `asset`       - The asset to download
 pub async fn download_latest_release(
     http_client: &reqwest::Client,
     asset: &GitHubReleaseAsset,

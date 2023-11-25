@@ -13,8 +13,8 @@ use url::Url;
 /// Starts the blaze server
 ///
 /// ## Arguments
-/// * http_client - The HTTP client passed around for connection upgrades
-/// * base_url    - The server base URL to connect clients to
+/// * `http_client` - The HTTP client passed around for connection upgrades
+/// * `base_url`    - The server base URL to connect clients to
 pub async fn start_blaze_server(
     http_client: reqwest::Client,
     base_url: Arc<Url>,
@@ -26,16 +26,16 @@ pub async fn start_blaze_server(
     loop {
         let (client_stream, _) = listener.accept().await?;
 
-        spawn_server_task(handle(client_stream, http_client.clone(), base_url.clone()))
+        spawn_server_task(handle(client_stream, http_client.clone(), base_url.clone()));
     }
 }
 
 /// Handler for processing BlazeSDK client connections
 ///
 /// ## Arguments
-/// * client_stream - The client stream to read and write from
-/// * http_client   - The HTTP client passed around for connection upgrades
-/// * base_url      - The server base URL to connect clients to
+/// * `client_stream` - The client stream to read and write from
+/// * `http_client`   - The HTTP client passed around for connection upgrades
+/// * `base_url`      - The server base URL to connect clients to
 async fn handle(mut client_stream: TcpStream, http_client: reqwest::Client, base_url: Arc<Url>) {
     debug!("Starting blaze connection");
 
