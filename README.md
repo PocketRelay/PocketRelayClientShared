@@ -5,6 +5,9 @@
 ![Cargo Version](https://img.shields.io/crates/v/pocket-relay-client-shared?style=for-the-badge)
 ![Cargo Downloads](https://img.shields.io/crates/d/pocket-relay-client-shared?style=for-the-badge)
 
+[Discord Server (discord.gg/yvycWW8RgR)](https://discord.gg/yvycWW8RgR)
+[Website (pocket-relay.pages.dev)](https://pocket-relay.pages.dev/)
+
 This is a shared backend implementation for the Pocket Relay client variants so that they can share behavior without creating duplicated code and to make changes more easy to carry across between implementations
 
 ```toml
