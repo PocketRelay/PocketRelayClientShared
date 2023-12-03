@@ -5,4 +5,29 @@
 ![Cargo Version](https://img.shields.io/crates/v/pocket-relay-client-shared?style=for-the-badge)
 ![Cargo Downloads](https://img.shields.io/crates/d/pocket-relay-client-shared?style=for-the-badge)
 
-This is a shared backend implementation for the Pocket Relay client variants so that they can share behavior without creating duplicated code and to make changes more easy to carry between implementations
+This is a shared backend implementation for the Pocket Relay client variants so that they can share behavior without creating duplicated code and to make changes more easy to carry across between implementations
+
+```toml
+[dependencies]
+pocket-relay-client-shared = "0.1"
+```
+
+## Used by
+
+This shared backend is used by the following Pocket Relay projects:
+- Standalone Client - https://github.com/PocketRelay/Client
+  - This is a standalone executable for the client
+- ASI Plugin - https://github.com/PocketRelay/PocketRelayClientPlugin
+  - This is a plugin variant of the client loaded by binkw32 plugin loaders
+
+## Functionality
+
+- Fire
+  - Very basic implementation of the fire packet framing using for the redirector server implementation
+- API
+  - Provides functions for working with the portions of the server api that the client uses 
+  - Provides functions for upgrading connections with the server
+- Local Servers
+  - Provides local servers for Redirector, QoS, HTTP, Blaze, Telemetry 
+- Update
+  - Small functions that help with getting update details from github releases
