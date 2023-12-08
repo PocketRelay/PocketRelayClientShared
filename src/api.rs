@@ -19,6 +19,8 @@ pub const DETAILS_ENDPOINT: &str = "api/server";
 pub const TELEMETRY_ENDPOINT: &str = "api/server/telemetry";
 /// Endpoint for upgrading the server connection
 pub const UPGRADE_ENDPOINT: &str = "api/server/upgrade";
+/// Endpoint for creating a connection tunnel
+pub const TUNNEL_ENDPOINT: &str = "api/server/tunnel";
 
 /// Server identifier for validation
 pub const SERVER_IDENT: &str = "POCKET_RELAY_SERVER";
@@ -360,4 +362,47 @@ pub async fn proxy_http_request(
     *response.headers_mut() = headers;
 
     Ok(response)
+}
+
+/// Creates a BlazeSDK upgraded stream using HTTP upgrades
+/// with the Pocket Relay server
+///
+/// ## Arguments
+/// * `http_client` - The HTTP client to connect with
+/// * `base_url`    - The server base URL (Connection URL)
+pub async fn create_server_tunnel(
+    http_client: reqwest::Client,
+    base_url: &Url,
+) -> Result<Upgraded, ServerStreamError> {
+    // Create the upgrade endpoint URL
+    let endpoint_url: Url = base_url
+        .join(TUNNEL_ENDPOINT)
+        .expect("Failed to create upgrade endpoint");
+
+    // Headers to provide when upgrading
+    let headers: HeaderMap<HeaderValue> = [
+        (header::CONNECTION, HeaderValue::from_static("Upgrade")),
+        (header::UPGRADE, HeaderValue::from_static("tunnel")),
+    ]
+    .into_iter()
+    .collect();
+
+    // Send the HTTP request and get its response
+    let response = http_client
+        .get(endpoint_url)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(ServerStreamError::RequestFailed)?;
+
+    // Handle server error responses
+    let response = response
+        .error_for_status()
+        .map_err(ServerStreamError::ServerError)?;
+
+    // Upgrade the connection
+    response
+        .upgrade()
+        .await
+        .map_err(ServerStreamError::UpgradeFailure)
 }

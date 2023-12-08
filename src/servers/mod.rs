@@ -9,6 +9,7 @@ pub mod http;
 pub mod qos;
 pub mod redirector;
 pub mod telemetry;
+pub mod tunnel;
 
 /// The port the Redirector server will bind to
 pub const REDIRECTOR_PORT: u16 = 42127;
