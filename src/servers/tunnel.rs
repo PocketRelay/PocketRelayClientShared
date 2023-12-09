@@ -47,7 +47,7 @@ impl Tunnel {
     pub async fn handle(mut self) {
         loop {
             select! {
-                // Recv messages thru tunnel
+                // Recv remote messages thru tunnel and send them to their pair socket
                 message = self.io.next() => {
                     if let Some(Ok(message)) = message {
                         debug!("Recv message through tunnel");
@@ -61,7 +61,7 @@ impl Tunnel {
                     }
                 }
 
-                // Sending messages through tunnel
+                // Sending local messages through tunnel
                 message = self.rx.recv() => {
                     if let Some(message) = message {
                     debug!("Sending message through tunnel");
@@ -122,36 +122,24 @@ impl TunnelSocket {
                 result = self.socket.recv(&mut recv_buffer) => {
 
                     if let Ok(count) = result {
-                        if self.index != 0 {
-                        debug!("Pool message recv");
+                        debug!("Pool message recv {}", self.index);
                         let buf =Bytes::copy_from_slice(&recv_buffer[..count]);
-                    self.tx
-                    .send(TunnelMessage {
-                        index: self.index,
-                        message: buf,
-                    })
-                    .unwrap();
-                    } else{
-                        debug!("Pool message send to host");
-                        self.socket.send_to(
-                            &recv_buffer[..count],
-                            SocketAddr::V4(SocketAddrV4::new(
-                                Ipv4Addr::LOCALHOST,
-                                3659, /* Todo update this in protocol later to use the local addr */
-                            )),
-                        )
-                        .await
-                        .unwrap();
-                    }
+                            self.tx
+                                .send(TunnelMessage {
+                                    index: self.index,
+                                    message: buf,
+                                })
+                                .unwrap();
+
                     } else {
-                        debug!("Tunnnel socket error");
+                        debug!("Tunnnel socket error {}", self.index);
                         break;
                     }
                 }
 
                 message = self.rx.recv() => {
                     if let Some(message) = message {
-                        debug!("Pool message send");
+                        debug!("Pool message send {}", self.index);
                         self.socket.send_to(
                             &message.message,
                             SocketAddr::V4(SocketAddrV4::new(
@@ -162,7 +150,7 @@ impl TunnelSocket {
                         .await
                         .unwrap();
                     } else {
-                        debug!("Tunnnel socket rx error");
+                        debug!("Tunnnel socket rx error {}", self.index);
                         break;
                     }
                 }
