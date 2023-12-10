@@ -1,5 +1,10 @@
 //! Tunneling server
 
+use self::codec::{TunnelCodec, TunnelMessage};
+use crate::{
+    api::create_server_tunnel,
+    servers::{RANDOM_PORT, TUNNEL_HOST_PORT},
+};
 use bytes::Bytes;
 use futures::{Future, Sink, Stream};
 use log::debug;
@@ -14,14 +19,14 @@ use tokio::{io::ReadBuf, net::UdpSocket, sync::mpsc, try_join};
 use tokio_util::codec::Framed;
 use url::Url;
 
-use crate::{
-    api::create_server_tunnel,
-    servers::{RANDOM_PORT, TUNNEL_HOST_PORT},
-};
+use super::spawn_server_task;
 
-use self::codec::{TunnelCodec, TunnelMessage};
-
+/// Starts the tunnel socket pool and creates the tunnel
+/// connection to the server
 ///
+/// ## Arguments
+/// * `http_client` - The HTTP client passed around for connection upgrades
+/// * `base_url`    - The server base URL to connect clients to
 pub async fn start_tunnel_server(
     http_client: reqwest::Client,
     base_url: Arc<Url>,
@@ -63,6 +68,7 @@ struct Tunnel {
     stop: bool,
 }
 
+/// Holds the state for the current writing progress
 enum TunnelWriteState {
     /// Recieve the message to write
     Recv,
@@ -235,7 +241,7 @@ impl TunnelSocket {
     ) -> TunnelSocketHandle {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        tokio::spawn(TunnelSocket {
+        spawn_server_task(TunnelSocket {
             index,
             socket,
             rx,
