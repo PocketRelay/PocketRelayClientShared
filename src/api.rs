@@ -364,8 +364,7 @@ pub async fn proxy_http_request(
     Ok(response)
 }
 
-/// Creates a BlazeSDK upgraded stream using HTTP upgrades
-/// with the Pocket Relay server
+/// Creates a networking tunnel for game packets
 ///
 /// ## Arguments
 /// * `http_client` - The HTTP client to connect with

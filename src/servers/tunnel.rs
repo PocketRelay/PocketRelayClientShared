@@ -1,86 +1,181 @@
-use std::{
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
-    sync::Arc,
-};
+//! Tunneling server
 
-use bytes::{Buf, BufMut, Bytes};
-use futures::{SinkExt, StreamExt};
+use bytes::Bytes;
+use futures::{Future, Sink, Stream};
 use log::debug;
 use reqwest::Upgraded;
-use tokio::{net::UdpSocket, select, sync::mpsc, try_join};
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    pin::Pin,
+    sync::Arc,
+    task::{ready, Context, Poll},
+};
+use tokio::{io::ReadBuf, net::UdpSocket, sync::mpsc, try_join};
+use tokio_util::codec::Framed;
 use url::Url;
 
-use crate::api::create_server_tunnel;
-///
-pub const TUNNEL_HOST_PORT: u16 = 42132;
+use crate::{
+    api::create_server_tunnel,
+    servers::{RANDOM_PORT, TUNNEL_HOST_PORT},
+};
+
+use self::codec::{TunnelCodec, TunnelMessage};
 
 ///
-pub async fn start_tunnel(http_client: reqwest::Client, base_url: Arc<Url>) -> std::io::Result<()> {
+pub async fn start_tunnel_server(
+    http_client: reqwest::Client,
+    base_url: Arc<Url>,
+) -> std::io::Result<()> {
     // Connect the tunnel
     debug!("Allocated tunnel");
     let tunnel = create_server_tunnel(http_client, &base_url).await.unwrap();
-    let tunnel = Framed::new(tunnel, TunnelCodec { partial: None });
+    let tunnel = Framed::new(tunnel, TunnelCodec::default());
     let (tx, rx) = mpsc::unbounded_channel();
     let pool = allocate_pool(tx).await.unwrap();
     debug!("Allocated tunnel pool");
-    let tunnel = Tunnel {
+
+    Tunnel {
         io: tunnel,
         rx,
         pool,
-    };
-    tunnel.handle().await;
+        write_state: TunnelWriteState::Recv,
+        stop: false,
+    }
+    .await;
+
+    // TODO: Attempt reconnect on error
+
     Ok(())
 }
 
-///
-pub struct Tunnel {
+/// Represents a tunnel and its pool of conenctions that it can
+/// send data to
+struct Tunnel {
+    /// Underlying tunneled IO for sending messages through the server
     io: Framed<Upgraded, TunnelCodec>,
-    // Reciever for messages that need to be sent
+    /// Reciever for messages that need to be sent through `io`
     rx: mpsc::UnboundedReceiver<TunnelMessage>,
-    // Pool of sockets for sending messages and recieving respones
+    /// Pool of sockets for sending messages and recieving respones
     pool: [TunnelSocketHandle; 4],
+    /// Future state for writing to the `io`
+    write_state: TunnelWriteState,
+    /// Whether the future has been stopped
+    stop: bool,
+}
+
+enum TunnelWriteState {
+    /// Recieve the message to write
+    Recv,
+    /// Wait for the stream to be writable
+    Write {
+        // The message to write
+        message: Option<TunnelMessage>,
+    },
+    // Poll flushing the tunnel
+    Flush,
 }
 
 impl Tunnel {
+    /// Polls accepting messages from `rx` then writing them to `io` and
+    /// flushing the underlying stream.
     ///
-    pub async fn handle(mut self) {
-        loop {
-            select! {
-                // Recv remote messages thru tunnel and send them to their pair socket
-                message = self.io.next() => {
-                    if let Some(Ok(message)) = message {
-                        debug!("Recv message through tunnel");
-                        if let Some(handle) = self.pool.get(message.index as usize) {
-                            handle.0.send(message).unwrap();
-                        }
-                    } else {
+    /// Should be repeatedly called until it no-longer returns `Poll::Ready`
+    fn poll_write_state(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        match &mut self.write_state {
+            TunnelWriteState::Recv => {
+                // Try receive a packet from the write channel
+                let result = ready!(Pin::new(&mut self.rx).poll_recv(cx));
 
-                        debug!("Tunnnel droooped");
-                        break;
-                    }
-                }
-
-                // Sending local messages through tunnel
-                message = self.rx.recv() => {
-                    if let Some(message) = message {
-                    debug!("Sending message through tunnel");
-                    self.io.send(message).await.unwrap();
-                    } else {
-                        debug!("Tunnnel rx droooped");
-                        break;
-                    }
+                if let Some(message) = result {
+                    self.write_state = TunnelWriteState::Write {
+                        message: Some(message),
+                    };
+                } else {
+                    // All writers have closed, session must be closed (Future end)
+                    self.stop = true;
                 }
             }
+            TunnelWriteState::Write { message } => {
+                // Wait until the inner is ready
+                if ready!(Pin::new(&mut self.io).poll_ready(cx)).is_ok() {
+                    let message = message
+                        .take()
+                        .expect("Unexpected write state without message");
+
+                    // Write the packet to the buffer
+                    Pin::new(&mut self.io)
+                        .start_send(message)
+                        // Packet encoder impl shouldn't produce errors
+                        .expect("Message encoder errored");
+
+                    self.write_state = TunnelWriteState::Flush;
+                } else {
+                    // Failed to ready, session must be closed
+                    self.stop = true;
+                }
+            }
+            TunnelWriteState::Flush => {
+                // Wait until the flush is complete
+                if ready!(Pin::new(&mut self.io).poll_flush(cx)).is_ok() {
+                    self.write_state = TunnelWriteState::Recv;
+                } else {
+                    // Failed to flush, session must be closed
+                    self.stop = true
+                }
+            }
+        }
+
+        Poll::Ready(())
+    }
+
+    /// Polls reading messages from `io` and sending them to the correct
+    /// handle within the `pool`.
+    ///
+    /// Should be repeatedly called until it no-longer returns `Poll::Ready`
+    fn poll_read_state(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        // Try receive a message from the `io`
+        let result = ready!(Pin::new(&mut self.io).poll_next(cx));
+
+        if let Some(Ok(message)) = result {
+            // Get the handle to use within the connection pool
+            let handle = self.pool.get(message.index as usize);
+
+            // Send the message to the handle if its valid
+            if let Some(handle) = handle {
+                handle.0.send(message).unwrap();
+            }
+        } else {
+            // Reader has closed or reading encountered an error (Either way stop reading)
+            self.stop = true;
+        }
+
+        Poll::Ready(())
+    }
+}
+
+impl Future for Tunnel {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        while this.poll_write_state(cx).is_ready() {}
+        while this.poll_read_state(cx).is_ready() {}
+
+        if this.stop {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
         }
     }
 }
 
-///
+/// Handle to a socket for sending it messages that it should send
 #[derive(Clone)]
 pub struct TunnelSocketHandle(mpsc::UnboundedSender<TunnelMessage>);
 
-///
+/// Represents an individual socket within a tunnels pool
+/// of sockets
 pub struct TunnelSocket {
     // Index of the socket
     index: u8,
@@ -90,7 +185,46 @@ pub struct TunnelSocket {
     rx: mpsc::UnboundedReceiver<TunnelMessage>,
     // Send messages to write to the tunnel
     tx: mpsc::UnboundedSender<TunnelMessage>,
+    /// Buffer for reading from the socket
+    read_buffer: [u8; 65536],
+    /// Future state for writing to the `socket`
+    write_state: TunnelSocketWriteState,
+    /// Whether the future has been stopped
+    stop: bool,
 }
+
+enum TunnelSocketWriteState {
+    /// Recieve the message to write
+    Recv,
+    /// Wait for the bytes to be written
+    Write {
+        // The message bytes to write
+        message: Bytes,
+    },
+}
+
+impl Future for TunnelSocket {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        while this.poll_write_state(cx).is_ready() {}
+        while this.poll_read_state(cx).is_ready() {}
+
+        if this.stop {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+// Local address the client uses to send packets
+static LOCAL_SEND_TARGET: SocketAddr = SocketAddr::V4(SocketAddrV4::new(
+    Ipv4Addr::LOCALHOST,
+    3659, /* Todo update this in protocol later to use the local addr */
+));
 
 impl TunnelSocket {
     ///
@@ -101,61 +235,85 @@ impl TunnelSocket {
     ) -> TunnelSocketHandle {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        tokio::spawn(async move {
-            let socket = TunnelSocket {
-                index,
-                socket,
-                rx,
-                tx: tun_tx,
-            };
-            socket.handle().await;
+        tokio::spawn(TunnelSocket {
+            index,
+            socket,
+            rx,
+            tx: tun_tx,
+            read_buffer: [0; 65536],
+            write_state: TunnelSocketWriteState::Recv,
+            stop: false,
         });
 
         TunnelSocketHandle(tx)
     }
-    ///
-    pub async fn handle(mut self) {
-        let mut recv_buffer: [u8; 65536] = [0u8; 65536];
 
-        loop {
-            select! {
-                result = self.socket.recv(&mut recv_buffer) => {
+    fn poll_write_state(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        match &mut self.write_state {
+            TunnelSocketWriteState::Recv => {
+                // Try receive a packet from the write channel
+                let result = ready!(Pin::new(&mut self.rx).poll_recv(cx));
 
-                    if let Ok(count) = result {
-                        debug!("Pool message recv {}", self.index);
-                        let buf =Bytes::copy_from_slice(&recv_buffer[..count]);
-                            self.tx
-                                .send(TunnelMessage {
-                                    index: self.index,
-                                    message: buf,
-                                })
-                                .unwrap();
-
-                    } else {
-                        debug!("Tunnnel socket error {}", self.index);
-                        break;
-                    }
+                if let Some(message) = result {
+                    self.write_state = TunnelSocketWriteState::Write {
+                        message: message.message,
+                    };
+                } else {
+                    // All writers have closed, session must be closed (Future end)
+                    self.stop = true;
                 }
+            }
+            TunnelSocketWriteState::Write { message } => {
+                // Try send the message to the local target
+                let result = ready!(self.socket.poll_send(cx, message));
 
-                message = self.rx.recv() => {
-                    if let Some(message) = message {
-                        debug!("Pool message send {}", self.index);
-                        self.socket.send_to(
-                            &message.message,
-                            SocketAddr::V4(SocketAddrV4::new(
-                                Ipv4Addr::LOCALHOST,
-                                3659, /* Todo update this in protocol later to use the local addr */
-                            )),
-                        )
-                        .await
-                        .unwrap();
+                if let Ok(count) = result {
+                    // Didnt write entire messsage
+                    if count != message.len() {
+                        // Continue with a writing state at the remaining message
+                        let message = message.slice(count..);
+                        self.write_state = TunnelSocketWriteState::Write { message };
                     } else {
-                        debug!("Tunnnel socket rx error {}", self.index);
-                        break;
+                        self.write_state = TunnelSocketWriteState::Recv;
                     }
+                } else {
+                    self.stop = true;
                 }
-            };
+            }
         }
+
+        Poll::Ready(())
+    }
+
+    fn poll_read_state(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        let mut read_buf = ReadBuf::new(&mut self.read_buffer);
+
+        // Try receive a message from the socket
+        let result = ready!(self.socket.poll_recv(cx, &mut read_buf));
+
+        if result.is_ok() {
+            // Get the recieved message
+            let bytes = read_buf.filled();
+            let message = Bytes::copy_from_slice(bytes);
+
+            // Send the message through the tunnel
+            if self
+                .tx
+                .send(TunnelMessage {
+                    index: self.index,
+                    message,
+                })
+                .is_err()
+            {
+                // Tunnel has closed
+                self.stop = true;
+            }
+        } else {
+            // Reader has closed or reading encountered an error (Either way stop reading)
+            self.stop = true;
+        }
+
+        Poll::Ready(())
     }
 }
 
@@ -166,10 +324,19 @@ pub async fn allocate_pool(
     let (a, b, c, d) = try_join!(
         // Host tunnel index *must* use a fixed port since its used on the server side
         UdpSocket::bind((Ipv4Addr::LOCALHOST, TUNNEL_HOST_PORT)),
-        UdpSocket::bind((Ipv4Addr::LOCALHOST, 42133)),
-        UdpSocket::bind((Ipv4Addr::LOCALHOST, 42134)),
-        UdpSocket::bind((Ipv4Addr::LOCALHOST, 42135))
+        UdpSocket::bind((Ipv4Addr::LOCALHOST, RANDOM_PORT)),
+        UdpSocket::bind((Ipv4Addr::LOCALHOST, RANDOM_PORT)),
+        UdpSocket::bind((Ipv4Addr::LOCALHOST, RANDOM_PORT))
     )?;
+
+    // Set the send addresses for the sockets
+    try_join!(
+        a.connect(LOCAL_SEND_TARGET),
+        b.connect(LOCAL_SEND_TARGET),
+        c.connect(LOCAL_SEND_TARGET),
+        d.connect(LOCAL_SEND_TARGET),
+    )?;
+
     let sockets: [TunnelSocketHandle; 4] = [
         TunnelSocket::start(0, a, tun_tx.clone()),
         TunnelSocket::start(1, b, tun_tx.clone()),
@@ -179,72 +346,79 @@ pub async fn allocate_pool(
     Ok(sockets)
 }
 
-/// Partially decoded tunnnel message
-pub struct TunnelMessagePartial {
-    ///
-    pub index: u8,
-    ///
-    pub length: u32,
-}
+/// Encoding an decoding logic for tunnel packet messages
+mod codec {
+    use bytes::{Buf, BufMut, Bytes};
+    use tokio_util::codec::{Decoder, Encoder};
 
-/// Message sent through the tunnel
-pub struct TunnelMessage {
-    /// Socket index to use
-    pub index: u8,
-    /// The message contents
-    pub message: Bytes,
-}
-
-///
-pub struct TunnelCodec {
-    ///
-    partial: Option<TunnelMessagePartial>,
-}
-
-impl Decoder for TunnelCodec {
-    type Item = TunnelMessage;
-    type Error = std::io::Error;
-
-    fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let partial = match self.partial.as_mut() {
-            Some(value) => value,
-            None => {
-                // Not enough room for a partial frame
-                if src.len() < 5 {
-                    return Ok(None);
-                }
-                let index = src.get_u8();
-                let length = src.get_u32();
-
-                self.partial.insert(TunnelMessagePartial { index, length })
-            }
-        };
-        // Not enough data for the partial frame
-        if src.len() < partial.length as usize {
-            return Ok(None);
-        }
-
-        let partial = self.partial.take().expect("Partial frame missing");
-        let bytes = src.split_to(partial.length as usize);
-
-        Ok(Some(TunnelMessage {
-            index: partial.index,
-            message: bytes.freeze(),
-        }))
+    /// Partially decoded tunnnel message
+    pub struct TunnelMessagePartial {
+        /// Socket index to use
+        pub index: u8,
+        /// The length of the tunnel message bytes
+        pub length: u32,
     }
-}
 
-impl Encoder<TunnelMessage> for TunnelCodec {
-    type Error = std::io::Error;
+    /// Message sent through the tunnel
+    pub struct TunnelMessage {
+        /// Socket index to use
+        pub index: u8,
+        /// The message contents
+        pub message: Bytes,
+    }
 
-    fn encode(
-        &mut self,
-        item: TunnelMessage,
-        dst: &mut bytes::BytesMut,
-    ) -> Result<(), Self::Error> {
-        dst.put_u8(item.index);
-        dst.put_u32(item.message.len() as u32);
-        dst.extend_from_slice(&item.message);
-        Ok(())
+    /// Codec for encoding and decoding tunnel messages
+    #[derive(Default)]
+    pub struct TunnelCodec {
+        /// Stores a partially decoded frame if one is present
+        partial: Option<TunnelMessagePartial>,
+    }
+
+    impl Decoder for TunnelCodec {
+        type Item = TunnelMessage;
+        type Error = std::io::Error;
+
+        fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+            let partial = match self.partial.as_mut() {
+                Some(value) => value,
+                None => {
+                    // Not enough room for a partial frame
+                    if src.len() < 5 {
+                        return Ok(None);
+                    }
+                    let index = src.get_u8();
+                    let length = src.get_u32();
+
+                    self.partial.insert(TunnelMessagePartial { index, length })
+                }
+            };
+            // Not enough data for the partial frame
+            if src.len() < partial.length as usize {
+                return Ok(None);
+            }
+
+            let partial = self.partial.take().expect("Partial frame missing");
+            let bytes = src.split_to(partial.length as usize);
+
+            Ok(Some(TunnelMessage {
+                index: partial.index,
+                message: bytes.freeze(),
+            }))
+        }
+    }
+
+    impl Encoder<TunnelMessage> for TunnelCodec {
+        type Error = std::io::Error;
+
+        fn encode(
+            &mut self,
+            item: TunnelMessage,
+            dst: &mut bytes::BytesMut,
+        ) -> Result<(), Self::Error> {
+            dst.put_u8(item.index);
+            dst.put_u32(item.message.len() as u32);
+            dst.extend_from_slice(&item.message);
+            Ok(())
+        }
     }
 }
