@@ -193,7 +193,7 @@ impl Tunnel {
 
                     TunnelWriteState::Flush
                 } else {
-                    // Failed to ready, session must be closed
+                    // Failed to ready, tunnel must be closed
                     TunnelWriteState::Stop
                 }
             }
@@ -202,7 +202,7 @@ impl Tunnel {
                 if ready!(Pin::new(&mut self.io).poll_flush(cx)).is_ok() {
                     TunnelWriteState::Recv
                 } else {
-                    // Failed to flush, session must be closed
+                    // Failed to flush, tunnel must be closed
                     TunnelWriteState::Stop
                 }
             }
