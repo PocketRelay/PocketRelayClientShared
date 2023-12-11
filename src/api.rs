@@ -376,7 +376,7 @@ pub async fn create_server_tunnel(
     // Create the upgrade endpoint URL
     let endpoint_url: Url = base_url
         .join(TUNNEL_ENDPOINT)
-        .expect("Failed to create upgrade endpoint");
+        .expect("Failed to create tunnel endpoint");
 
     // Headers to provide when upgrading
     let headers: HeaderMap<HeaderValue> = [
