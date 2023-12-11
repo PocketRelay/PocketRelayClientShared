@@ -269,6 +269,13 @@ impl Future for Tunnel {
 #[derive(Clone)]
 struct SocketHandle(mpsc::UnboundedSender<TunnelMessage>);
 
+/// Size of the socket read buffer 2^16 bytes
+///
+/// Can likely be reduced to 2^15 bytes or 2^13 bytes (or lower) since
+/// highest observed message length was 1254 bytes but testing is requried
+/// before that can take place
+const READ_BUFFER_LENGTH: usize = 2usize.pow(16);
+
 /// Socket used by a [`Tunnel`] for sending and recieving messages in
 /// order to simulate another player on the local network
 struct Socket {
@@ -283,7 +290,7 @@ struct Socket {
     /// in order for them to be sent to the correct peer on the other side
     tun_tx: mpsc::UnboundedSender<TunnelMessage>,
     /// Buffer for reading bytes from the `socket`
-    read_buffer: [u8; 65536],
+    read_buffer: [u8; READ_BUFFER_LENGTH],
     /// Current state of writing [`TunnelMessage`]s to the `socket`
     write_state: SocketWriteState,
 }
@@ -355,7 +362,7 @@ impl Socket {
             socket,
             rx,
             tun_tx,
-            read_buffer: [0; 65536],
+            read_buffer: [0; READ_BUFFER_LENGTH],
             write_state: Default::default(),
         });
 
@@ -468,22 +475,22 @@ mod codec {
     //! Tunnel message frames are as follows:
     //!
     //! ```norun
-    //!  0                   1                   2                   3                  
-    //!  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
-    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    //! |     Index     |                          Length                               |
-    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    //! |                                                                               :
-    //! :                                Payload                                        :
-    //! :                                                                               |
-    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //!  0                   1                   2                      
+    //!  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3
+    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //! |     Index     |            Length             |
+    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //! |                                               :
+    //! :                    Payload                    :
+    //! :                                               |
+    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     //! ```
     //!
     //! Tunnel message frames contain the following fields:
     //!
-    //! Index: 8 bits. Determines the destination of the message within the current pool.
+    //! Index: 8-bits. Determines the destination of the message within the current pool.
     //!
-    //! Length: 32 bits. Determines the size in bytes of the payload that follows
+    //! Length: 16-bits. Determines the size in bytes of the payload that follows
     //!
     //! Payload: Variable length. The message bytes payload of `Length`
 
@@ -496,7 +503,7 @@ mod codec {
         /// Socket index to use
         index: u8,
         /// The length of the tunnel message bytes
-        length: u32,
+        length: u16,
     }
 
     /// Message sent through the tunnel
@@ -528,7 +535,7 @@ mod codec {
                         return Ok(None);
                     }
                     let index = src.get_u8();
-                    let length = src.get_u32();
+                    let length = src.get_u16();
 
                     self.partial.insert(TunnelMessageHeader { index, length })
                 }
@@ -557,7 +564,7 @@ mod codec {
             dst: &mut bytes::BytesMut,
         ) -> Result<(), Self::Error> {
             dst.put_u8(item.index);
-            dst.put_u32(item.message.len() as u32);
+            dst.put_u16(item.message.len() as u16);
             dst.extend_from_slice(&item.message);
             Ok(())
         }
