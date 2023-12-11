@@ -302,10 +302,7 @@ enum SocketWriteState {
     #[default]
     Recv,
     /// Waiting for the [`Socket::socket`] to write the bytes
-    Write {
-        // The message bytes to write
-        message: Bytes,
-    },
+    Write(Bytes),
     /// The tunnnel has stopped and should not continue
     Stop,
 }
@@ -380,15 +377,13 @@ impl Socket {
                 let result = ready!(Pin::new(&mut self.rx).poll_recv(cx));
 
                 if let Some(message) = result {
-                    SocketWriteState::Write {
-                        message: message.message,
-                    }
+                    SocketWriteState::Write(message.message)
                 } else {
                     // All writers have closed, tunnel must be closed (Future end)
                     SocketWriteState::Stop
                 }
             }
-            SocketWriteState::Write { message } => {
+            SocketWriteState::Write(message) => {
                 // Try send the message to the local target
                 let Ok(count) = ready!(self.socket.poll_send(cx, message)) else {
                     return Poll::Ready(SocketWriteState::Stop);
@@ -398,7 +393,7 @@ impl Socket {
                 if count != message.len() {
                     // Continue with a writing state at the remaining message
                     let message = message.slice(count..);
-                    SocketWriteState::Write { message }
+                    SocketWriteState::Write(message)
                 } else {
                     SocketWriteState::Recv
                 }
