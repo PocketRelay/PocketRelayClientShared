@@ -460,17 +460,43 @@ impl Future for Socket {
     }
 }
 
-/// Encoding an decoding logic for tunnel packet messages
 mod codec {
+    //! This modules contains the codec and message structures for [TunnelMessage]s
+    //!
+    //! # Tunnel Messages
+    //!
+    //! Tunnel message frames are as follows:
+    //!
+    //! ```norun
+    //!  0                   1                   2                   3                  
+    //!  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
+    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //! |     Index     |                          Length                               |
+    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //! |                                                                               :
+    //! :                                Payload                                        :
+    //! :                                                                               |
+    //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //! ```
+    //!
+    //! Tunnel message frames contain the following fields:
+    //!
+    //! Index: 8 bits. Determines the destination of the message within the current pool.
+    //!
+    //! Length: 32 bits. Determines the size in bytes of the payload that follows
+    //!
+    //! Payload: Variable length. The message bytes payload of `Length`
+
     use bytes::{Buf, BufMut, Bytes};
     use tokio_util::codec::{Decoder, Encoder};
 
-    /// Partially decoded tunnnel message
-    pub struct TunnelMessagePartial {
+    /// Header portion of a [TunnelMessage] that contains the
+    /// index of the message and the length of the expected payload
+    struct TunnelMessageHeader {
         /// Socket index to use
-        pub index: u8,
+        index: u8,
         /// The length of the tunnel message bytes
-        pub length: u32,
+        length: u32,
     }
 
     /// Message sent through the tunnel
@@ -484,8 +510,9 @@ mod codec {
     /// Codec for encoding and decoding tunnel messages
     #[derive(Default)]
     pub struct TunnelCodec {
-        /// Stores a partially decoded frame if one is present
-        partial: Option<TunnelMessagePartial>,
+        /// Stores the current message header while its waiting
+        /// for the full payload to become available
+        partial: Option<TunnelMessageHeader>,
     }
 
     impl Decoder for TunnelCodec {
@@ -503,7 +530,7 @@ mod codec {
                     let index = src.get_u8();
                     let length = src.get_u32();
 
-                    self.partial.insert(TunnelMessagePartial { index, length })
+                    self.partial.insert(TunnelMessageHeader { index, length })
                 }
             };
             // Not enough data for the partial frame
