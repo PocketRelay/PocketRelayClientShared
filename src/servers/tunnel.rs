@@ -323,14 +323,15 @@ impl Socket {
     async fn allocate_pool(
         tun_tx: mpsc::UnboundedSender<TunnelMessage>,
     ) -> std::io::Result<[SocketHandle; SOCKET_POOL_SIZE]> {
-        try_join!(
+        let sockets = try_join!(
             // Host socket index *must* use a fixed port since its used on the server side
             Socket::start(0, TUNNEL_HOST_PORT, tun_tx.clone()),
             // Other sockets can used OS auto assigned port
             Socket::start(1, RANDOM_PORT, tun_tx.clone()),
             Socket::start(2, RANDOM_PORT, tun_tx.clone()),
             Socket::start(3, RANDOM_PORT, tun_tx),
-        )
+        )?;
+        Ok(sockets.into())
     }
 
     /// Starts a new tunnel socket returning a [`SocketHandle`] that can be used
