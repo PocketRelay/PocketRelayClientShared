@@ -43,9 +43,11 @@ static LOCAL_SEND_TARGET: SocketAddr =
 /// ## Arguments
 /// * `http_client` - The HTTP client passed around for connection upgrades
 /// * `base_url`    - The server base URL to connect clients to
+/// * `association` - Optional client association
 pub async fn start_tunnel_server(
     http_client: reqwest::Client,
     base_url: Arc<Url>,
+    association: Arc<Option<String>>,
 ) -> std::io::Result<()> {
     // Last encountered error
     let mut last_error: Option<std::io::Error> = None;
@@ -55,7 +57,9 @@ pub async fn start_tunnel_server(
     // Looping to attempt reconnecting if lost
     while attempt_errors < MAX_ERROR_ATTEMPTS {
         // Create the tunnel (Future will end if tunnel stopped)
-        let reconnect_time = if let Err(err) = create_tunnel(http_client.clone(), &base_url).await {
+        let reconnect_time = if let Err(err) =
+            create_tunnel(http_client.clone(), &base_url, Option::as_ref(&association)).await
+        {
             error!("Failed to create tunnel: {}", err);
 
             // Set last error
@@ -94,9 +98,13 @@ pub async fn start_tunnel_server(
 /// ## Arguments
 /// * `http_client` - The HTTP client passed around for connection upgrades
 /// * `base_url`    - The server base URL to connect clients to
-async fn create_tunnel(http_client: reqwest::Client, base_url: &Url) -> std::io::Result<()> {
+async fn create_tunnel(
+    http_client: reqwest::Client,
+    base_url: &Url,
+    association: Option<&String>,
+) -> std::io::Result<()> {
     // Create the tunnel with the server
-    let io = create_server_tunnel(http_client, base_url)
+    let io = create_server_tunnel(http_client, base_url, association)
         .await
         // Wrap the tunnel with the [`TunnelCodec`] framing
         .map(|io| Framed::new(io, TunnelCodec::default()))
