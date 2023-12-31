@@ -49,6 +49,12 @@ pub async fn start_tunnel_server(
     base_url: Arc<Url>,
     association: Arc<Option<String>>,
 ) -> std::io::Result<()> {
+    let association = match Option::as_ref(&association) {
+        Some(value) => value,
+        // Don't try and tunnel without a token
+        None => return Ok(()),
+    };
+
     // Last encountered error
     let mut last_error: Option<std::io::Error> = None;
     // Number of attempts that errored
@@ -57,26 +63,25 @@ pub async fn start_tunnel_server(
     // Looping to attempt reconnecting if lost
     while attempt_errors < MAX_ERROR_ATTEMPTS {
         // Create the tunnel (Future will end if tunnel stopped)
-        let reconnect_time = if let Err(err) =
-            create_tunnel(http_client.clone(), &base_url, Option::as_ref(&association)).await
-        {
-            error!("Failed to create tunnel: {}", err);
+        let reconnect_time =
+            if let Err(err) = create_tunnel(http_client.clone(), &base_url, association).await {
+                error!("Failed to create tunnel: {}", err);
 
-            // Set last error
-            last_error = Some(err);
+                // Set last error
+                last_error = Some(err);
 
-            // Increase error attempts
-            attempt_errors += 1;
+                // Increase error attempts
+                attempt_errors += 1;
 
-            // Error should be delayed by the number of errors already hit
-            Duration::from_millis(1000 * attempt_errors as u64)
-        } else {
-            // Reset error attempts
-            attempt_errors = 0;
+                // Error should be delayed by the number of errors already hit
+                Duration::from_millis(1000 * attempt_errors as u64)
+            } else {
+                // Reset error attempts
+                attempt_errors = 0;
 
-            // Non errored reconnect can be quick
-            Duration::from_millis(1000)
-        };
+                // Non errored reconnect can be quick
+                Duration::from_millis(1000)
+            };
 
         debug!(
             "Next tunnel create attempt in: {}s",
@@ -101,7 +106,7 @@ pub async fn start_tunnel_server(
 async fn create_tunnel(
     http_client: reqwest::Client,
     base_url: &Url,
-    association: Option<&String>,
+    association: &str,
 ) -> std::io::Result<()> {
     // Create the tunnel with the server
     let io = create_server_tunnel(http_client, base_url, association)

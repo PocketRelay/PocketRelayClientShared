@@ -396,11 +396,11 @@ pub async fn proxy_http_request(
 /// ## Arguments
 /// * `http_client` - The HTTP client to connect with
 /// * `base_url`    - The server base URL (Connection URL)
-/// * `association` - Optional association token
+/// * `association` - Association token
 pub async fn create_server_tunnel(
     http_client: reqwest::Client,
     base_url: &Url,
-    association: Option<&String>,
+    association: &str,
 ) -> Result<Upgraded, ServerStreamError> {
     // Create the upgrade endpoint URL
     let endpoint_url: Url = base_url
@@ -416,12 +416,10 @@ pub async fn create_server_tunnel(
     .collect();
 
     // Include association token
-    if let Some(association) = association {
-        headers.insert(
-            HeaderName::from_static(headers::ASSOCIATION),
-            HeaderValue::from_str(association).expect("Invalid association token"),
-        );
-    }
+    headers.insert(
+        HeaderName::from_static(headers::ASSOCIATION),
+        HeaderValue::from_str(association).expect("Invalid association token"),
+    );
 
     // Send the HTTP request and get its response
     let response = http_client
