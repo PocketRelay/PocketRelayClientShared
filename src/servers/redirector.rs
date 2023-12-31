@@ -16,12 +16,14 @@ use tokio_util::codec::Framed;
 /// Starts the redirector server
 pub async fn start_redirector_server() -> std::io::Result<()> {
     // Bind the local ssl socket for accepting connections
-    let listener = BlazeListener::bind((Ipv4Addr::LOCALHOST, REDIRECTOR_PORT)).await?;
+    let listener =
+        BlazeListener::bind((Ipv4Addr::LOCALHOST, REDIRECTOR_PORT), Default::default()).await?;
 
     // Accept connections
     loop {
         let client_accept = listener.accept().await?;
         spawn_server_task(async move {
+            debug!("Redirector connection");
             if let Err(err) = handle(client_accept).await {
                 error!("Error while redirecting: {}", err);
             }
@@ -33,17 +35,17 @@ pub async fn start_redirector_server() -> std::io::Result<()> {
 #[derive(Debug, Error)]
 pub enum RedirectError {
     /// Error while accepting the ssl connection
-    #[error(transparent)]
-    BlazeSsl(#[from] blaze_ssl_async::BlazeError),
+    #[error("Accept error: {0}")]
+    Accept(io::Error),
     /// Connect timed out
     #[error("Timed out")]
     Timeout(Elapsed),
     /// Error while reading packets
     #[error("Read error: {0}")]
-    ReadError(io::Error),
+    Read(io::Error),
     /// Error while writing packets
     #[error("Write error: {0}")]
-    WriteError(io::Error),
+    Write(io::Error),
 }
 
 /// Allowed time for a redirect to occur before considering
@@ -59,7 +61,11 @@ const COMMAND_GET_SERVER_INSTANCE: u16 = 0x1;
 /// ## Arguments
 /// * `client_accept` - The connecting SSL client to accept
 async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
-    let (stream, _) = client_accept.finish_accept().await?;
+    let (stream, _) = client_accept
+        .finish_accept()
+        .await
+        .map_err(RedirectError::Accept)?;
+    debug!("Accepted redirect connection");
     let mut framed = Framed::new(stream, FireCodec::default());
 
     while let Some(packet) = timeout(REDIRECT_TIMEOUT, framed.try_next())
@@ -67,7 +73,7 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
         // Handle timeout errors
         .map_err(RedirectError::Timeout)?
         // Handle reading errors
-        .map_err(RedirectError::ReadError)?
+        .map_err(RedirectError::Read)?
     {
         let header = &packet.header;
 
@@ -81,7 +87,7 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
             framed
                 .send(Frame::response_empty(header))
                 .await
-                .map_err(RedirectError::WriteError)?;
+                .map_err(RedirectError::Write)?;
             continue;
         }
 
@@ -90,7 +96,7 @@ async fn handle(client_accept: BlazeAccept) -> Result<(), RedirectError> {
         framed
             .send(Frame::response(header, LocalInstanceResponse))
             .await
-            .map_err(RedirectError::WriteError)?;
+            .map_err(RedirectError::Write)?;
         break;
     }
 

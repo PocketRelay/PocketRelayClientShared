@@ -12,7 +12,7 @@ This is a shared backend implementation for the Pocket Relay client variants so 
 
 ```toml
 [dependencies]
-pocket-relay-client-shared = "0.1"
+pocket-relay-client-shared = "0.2"
 ```
 
 ## Used by
@@ -34,3 +34,5 @@ This shared backend is used by the following Pocket Relay projects:
   - Provides local servers for Redirector, QoS, HTTP, Blaze, Telemetry 
 - Update
   - Small functions that help with getting update details from github releases
+- Tunneling
+  - Provides socket pools and tunneling for https://github.com/PocketRelay/Server/issues/64

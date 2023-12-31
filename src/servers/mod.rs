@@ -9,6 +9,7 @@ pub mod http;
 pub mod qos;
 pub mod redirector;
 pub mod telemetry;
+pub mod tunnel;
 
 /// The port the Redirector server will bind to
 pub const REDIRECTOR_PORT: u16 = 42127;
@@ -20,6 +21,12 @@ pub const TELEMETRY_PORT: u16 = 42129;
 pub const QOS_PORT: u16 = 42130;
 /// The port the HTTP server will bind to
 pub const HTTP_PORT: u16 = 42131;
+/// The port used for the host socket
+pub const TUNNEL_HOST_PORT: u16 = 42132;
+/// Port that the OS may choose
+pub const RANDOM_PORT: u16 = 0;
+/// Port that the game itself is on
+pub const GAME_HOST_PORT: u16 = 3659;
 
 // Shared set of abort handles to server tasks
 static SERVER_TASK_COLLECTION: Mutex<Vec<AbortHandle>> = Mutex::new(Vec::new());
