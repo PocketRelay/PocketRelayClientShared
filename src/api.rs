@@ -9,7 +9,7 @@ use log::error;
 use reqwest::{Client, Identity, Upgraded};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{path::Path, str::FromStr, sync::Arc};
+use std::{path::Path, str::FromStr};
 use thiserror::Error;
 use url::Url;
 
@@ -103,11 +103,11 @@ struct ServerDetails {
 #[derive(Debug, Clone)]
 pub struct LookupData {
     /// Server url
-    pub url: Arc<Url>,
+    pub url: Url,
     /// The server version
     pub version: Version,
     /// Association token if the server supports providing one
-    pub association: Arc<Option<String>>,
+    pub association: Option<String>,
 }
 
 /// Errors that can occur while looking up a server
@@ -226,9 +226,9 @@ pub async fn lookup_server(
     }
 
     Ok(LookupData {
-        url: Arc::new(url),
+        url,
         version: details.version,
-        association: Arc::new(details.association),
+        association: details.association,
     })
 }
 
@@ -254,7 +254,7 @@ pub enum ServerStreamError {
 /// * `base_url`    - The server base URL (Connection URL)
 /// * `association` - Optional client association token
 pub async fn create_server_stream(
-    http_client: reqwest::Client,
+    http_client: &reqwest::Client,
     base_url: &Url,
     association: Option<&String>,
 ) -> Result<Upgraded, ServerStreamError> {
@@ -398,7 +398,7 @@ pub async fn proxy_http_request(
 /// * `base_url`    - The server base URL (Connection URL)
 /// * `association` - Association token
 pub async fn create_server_tunnel(
-    http_client: reqwest::Client,
+    http_client: &reqwest::Client,
     base_url: &Url,
     association: &str,
 ) -> Result<Upgraded, ServerStreamError> {

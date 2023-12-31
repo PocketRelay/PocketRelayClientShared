@@ -9,6 +9,7 @@
 use self::codec::{TunnelCodec, TunnelMessage};
 use crate::{
     api::create_server_tunnel,
+    ctx::ClientContext,
     servers::{spawn_server_task, GAME_HOST_PORT, RANDOM_PORT, TUNNEL_HOST_PORT},
 };
 use bytes::Bytes;
@@ -26,7 +27,6 @@ use std::{
 };
 use tokio::{io::ReadBuf, net::UdpSocket, sync::mpsc, try_join};
 use tokio_util::codec::Framed;
-use url::Url;
 
 /// The fixed size of socket pool to use
 const SOCKET_POOL_SIZE: usize = 4;
@@ -41,15 +41,9 @@ static LOCAL_SEND_TARGET: SocketAddr =
 /// connection to the server
 ///
 /// ## Arguments
-/// * `http_client` - The HTTP client passed around for connection upgrades
-/// * `base_url`    - The server base URL to connect clients to
-/// * `association` - Optional client association
-pub async fn start_tunnel_server(
-    http_client: reqwest::Client,
-    base_url: Arc<Url>,
-    association: Arc<Option<String>>,
-) -> std::io::Result<()> {
-    let association = match Option::as_ref(&association) {
+/// * `ctx` - The client context
+pub async fn start_tunnel_server(ctx: Arc<ClientContext>) -> std::io::Result<()> {
+    let association = match Option::as_ref(&ctx.association) {
         Some(value) => value,
         // Don't try and tunnel without a token
         None => return Ok(()),
@@ -63,25 +57,24 @@ pub async fn start_tunnel_server(
     // Looping to attempt reconnecting if lost
     while attempt_errors < MAX_ERROR_ATTEMPTS {
         // Create the tunnel (Future will end if tunnel stopped)
-        let reconnect_time =
-            if let Err(err) = create_tunnel(http_client.clone(), &base_url, association).await {
-                error!("Failed to create tunnel: {}", err);
+        let reconnect_time = if let Err(err) = create_tunnel(ctx.clone(), association).await {
+            error!("Failed to create tunnel: {}", err);
 
-                // Set last error
-                last_error = Some(err);
+            // Set last error
+            last_error = Some(err);
 
-                // Increase error attempts
-                attempt_errors += 1;
+            // Increase error attempts
+            attempt_errors += 1;
 
-                // Error should be delayed by the number of errors already hit
-                Duration::from_millis(1000 * attempt_errors as u64)
-            } else {
-                // Reset error attempts
-                attempt_errors = 0;
+            // Error should be delayed by the number of errors already hit
+            Duration::from_millis(1000 * attempt_errors as u64)
+        } else {
+            // Reset error attempts
+            attempt_errors = 0;
 
-                // Non errored reconnect can be quick
-                Duration::from_millis(1000)
-            };
+            // Non errored reconnect can be quick
+            Duration::from_millis(1000)
+        };
 
         debug!(
             "Next tunnel create attempt in: {}s",
@@ -101,15 +94,11 @@ pub async fn start_tunnel_server(
 /// Creates a new tunnel
 ///
 /// ## Arguments
-/// * `http_client` - The HTTP client passed around for connection upgrades
-/// * `base_url`    - The server base URL to connect clients to
-async fn create_tunnel(
-    http_client: reqwest::Client,
-    base_url: &Url,
-    association: &str,
-) -> std::io::Result<()> {
+/// * `ctx`         - The client context
+/// * `association` - The client association token
+async fn create_tunnel(ctx: Arc<ClientContext>, association: &str) -> std::io::Result<()> {
     // Create the tunnel with the server
-    let io = create_server_tunnel(http_client, base_url, association)
+    let io = create_server_tunnel(&ctx.http_client, &ctx.base_url, association)
         .await
         // Wrap the tunnel with the [`TunnelCodec`] framing
         .map(|io| Framed::new(io, TunnelCodec::default()))

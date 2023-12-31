@@ -2,24 +2,22 @@
 //! forwarding them to the connect Pocket Relay server
 
 use super::{spawn_server_task, TELEMETRY_PORT};
-use crate::api::{publish_telemetry_event, TelemetryEvent};
+use crate::{
+    api::{publish_telemetry_event, TelemetryEvent},
+    ctx::ClientContext,
+};
 use log::error;
 use std::{net::Ipv4Addr, sync::Arc};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
 };
-use url::Url;
 
 /// Starts the telemetry server
 ///
 /// ## Arguments
-/// * `http_client` - The HTTP client used to forward messages
-/// * `base_url`    - The server base URL to connect clients to
-pub async fn start_telemetry_server(
-    http_client: reqwest::Client,
-    base_url: Arc<Url>,
-) -> std::io::Result<()> {
+/// * `ctx` - The client context
+pub async fn start_telemetry_server(ctx: Arc<ClientContext>) -> std::io::Result<()> {
     // Bind the local socket for accepting connections
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, TELEMETRY_PORT)).await?;
 
@@ -27,14 +25,18 @@ pub async fn start_telemetry_server(
     loop {
         let (client_stream, _) = listener.accept().await?;
 
-        spawn_server_task(handle(client_stream, http_client.clone(), base_url.clone()));
+        spawn_server_task(handle(client_stream, ctx.clone()));
     }
 }
 
 /// Handler for processing telemetry client connections
-async fn handle(mut client_stream: TcpStream, http_client: reqwest::Client, base_url: Arc<Url>) {
-    while let Ok(event) = read_telemetry_event(&mut client_stream).await {
-        if let Err(err) = publish_telemetry_event(&http_client, &base_url, event).await {
+///
+/// ## Arguments
+/// * `stream` - The stream to decode from
+/// * `ctx`    - The client context
+async fn handle(mut stream: TcpStream, ctx: Arc<ClientContext>) {
+    while let Ok(event) = read_telemetry_event(&mut stream).await {
+        if let Err(err) = publish_telemetry_event(&ctx.http_client, &ctx.base_url, event).await {
             error!("Failed to publish telemetry event: {}", err);
         }
     }
