@@ -23,7 +23,7 @@ reqwest = { version = "0.11", default-features = false, features = [
 serde = { version = "1", features = ["derive"] }
 
 # SSLv3 implementation for the game communications
-blaze-ssl-async = "^0.3"
+blaze-ssl-async = "0.4"
 
 # Library for obtaining the local IP address of the device
 local-ip-address = "0.5"
