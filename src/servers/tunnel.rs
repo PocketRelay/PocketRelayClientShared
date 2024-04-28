@@ -123,8 +123,8 @@ async fn create_tunnel(ctx: Arc<ClientContext>, association: &str) -> std::io::R
     Ok(())
 }
 
-/// Represents a tunnel and its pool of conenctions that it can
-/// send data to and receieve data from
+/// Represents a tunnel and its pool of connections that it can
+/// send data to and receive data from
 struct Tunnel {
     /// Tunnel connection to the Pocket Relay server for sending [`TunnelMessage`]s
     /// through the server to reach a specific peer
@@ -149,7 +149,7 @@ enum TunnelWriteState {
     Write(Option<TunnelMessage>),
     /// Poll flushing the bytes written to [`Tunnel::io`]
     Flush,
-    /// The tunnnel has stopped and should not continue
+    /// The tunnel has stopped and should not continue
     Stop,
 }
 
@@ -157,7 +157,7 @@ enum TunnelWriteState {
 enum TunnelReadState {
     /// Continue reading
     Continue,
-    /// The tunnnel has stopped and should not continue
+    /// The tunnel has stopped and should not continue
     Stop,
 }
 
@@ -274,16 +274,16 @@ struct SocketHandle(mpsc::UnboundedSender<TunnelMessage>);
 /// Size of the socket read buffer 2^16 bytes
 ///
 /// Can likely be reduced to 2^15 bytes or 2^13 bytes (or lower) since
-/// highest observed message length was 1254 bytes but testing is requried
+/// highest observed message length was 1254 bytes but testing is required
 /// before that can take place
 const READ_BUFFER_LENGTH: usize = 2usize.pow(16);
 
-/// Socket used by a [`Tunnel`] for sending and recieving messages in
+/// Socket used by a [`Tunnel`] for sending and receiving messages in
 /// order to simulate another player on the local network
 struct Socket {
     // Index of the socket
     index: u8,
-    // The underlying socket for sending and recieving
+    // The underlying socket for sending and receiving
     socket: UdpSocket,
     /// Receiver for messages coming from the the [`Tunnel`] that need to be
     /// send through the socket
@@ -305,7 +305,7 @@ enum SocketWriteState {
     Recv,
     /// Waiting for the [`Socket::socket`] to write the bytes
     Write(Bytes),
-    /// The tunnnel has stopped and should not continue
+    /// The tunnel has stopped and should not continue
     Stop,
 }
 
@@ -313,7 +313,7 @@ enum SocketWriteState {
 enum SocketReadState {
     /// Continue reading
     Continue,
-    /// The tunnnel has stopped and should not continue
+    /// The tunnel has stopped and should not continue
     Stop,
 }
 
@@ -392,7 +392,7 @@ impl Socket {
                     return Poll::Ready(SocketWriteState::Stop);
                 };
 
-                // Didnt write entire messsage
+                // Didn't write the entire message
                 if count != message.len() {
                     // Continue with a writing state at the remaining message
                     let message = message.slice(count..);
@@ -420,7 +420,7 @@ impl Socket {
             return Poll::Ready(SocketReadState::Stop);
         }
 
-        // Get the recieved message
+        // Get the received message
         let bytes = read_buf.filled();
         let message = Bytes::copy_from_slice(bytes);
         let message = TunnelMessage {

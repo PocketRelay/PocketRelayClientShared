@@ -13,7 +13,7 @@ pub struct GitHubRelease {
     pub tag_name: String,
     /// The name of the release (Usually the same as tag_name)
     pub name: String,
-    /// The datetime the release was published
+    /// The date & time the release was published
     pub published_at: String,
     /// The release assets
     pub assets: Vec<GitHubReleaseAsset>,

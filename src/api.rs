@@ -33,11 +33,11 @@ mod headers {
     /// Header used for association tokens
     pub const ASSOCIATION: &str = "x-association";
 
-    /// Legacy header used to derive the server scheme (Exists only for backwards compatability)
+    /// Legacy header used to derive the server scheme (Exists only for backwards compatibility)
     pub const LEGACY_SCHEME: &str = "x-pocket-relay-scheme";
-    /// Legacy header used to derive the server host (Exists only for backwards compatability)
+    /// Legacy header used to derive the server host (Exists only for backwards compatibility)
     pub const LEGACY_HOST: &str = "x-pocket-relay-host";
-    /// Legacy header used to derive the server port (Exists only for backwards compatability)
+    /// Legacy header used to derive the server port (Exists only for backwards compatibility)
     pub const LEGACY_PORT: &str = "x-pocket-relay-port";
     /// Legacy header telling the server to use local http routing
     /// (Existing only for backwards compat, this is the default behavior for newer versions)
@@ -157,7 +157,7 @@ pub async fn lookup_server(
 
     url.push_str(&host);
 
-    // Ensure theres a trailing slash (URL path will be interpeted incorrectly without)
+    // Ensure theres a trailing slash (URL path will be interpreted incorrectly without)
     if !url.ends_with('/') {
         url.push('/');
     }
@@ -216,12 +216,12 @@ pub async fn lookup_server(
         ));
     }
 
-    // Debug logging association aquire
+    // Debug logging association acquire
     #[cfg(debug_assertions)]
     {
         use log::debug;
         if let Some(association) = &details.association {
-            debug!("Aquired association token: {}", association);
+            debug!("Acquired association token: {}", association);
         }
     }
 
@@ -267,7 +267,7 @@ pub async fn create_server_stream(
     let mut headers: HeaderMap<HeaderValue> = [
         (header::CONNECTION, HeaderValue::from_static("Upgrade")),
         (header::UPGRADE, HeaderValue::from_static("blaze")),
-        // Headers for legacy compatability
+        // Headers for legacy compatibility
         (
             HeaderName::from_static(headers::LEGACY_SCHEME),
             HeaderValue::from_static("http"),
@@ -348,7 +348,7 @@ pub async fn publish_telemetry_event(
     Ok(())
 }
 
-/// Errors that could occur when proxying a request
+/// Errors that could occur in the proxy process
 #[derive(Debug, Error)]
 pub enum ProxyError {
     /// Initial HTTP request failure

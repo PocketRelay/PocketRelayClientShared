@@ -1,5 +1,5 @@
 //! Quality of Service server implementation, this is a pretty crude implementation
-//! but it atleast allows clients to sometimes obtain the correct address, usually
+//! but it at least allows clients to sometimes obtain the correct address, usually
 //! the server can fix it
 
 use super::{spawn_server_task, QOS_PORT};
@@ -24,7 +24,7 @@ pub async fn start_qos_server() -> std::io::Result<()> {
     // Accept messages
     loop {
         let (count, addr) = socket.recv_from(&mut buffer).await?;
-        // Create an array from the data that was recieved
+        // Create an array from the data that was received
         let buffer: Box<[u8]> = Box::from(&buffer[..count]);
 
         spawn_server_task(handle(socket.clone(), addr, buffer));
@@ -36,7 +36,7 @@ pub async fn start_qos_server() -> std::io::Result<()> {
 /// ## Arguments
 /// * `socket`      - The UDP socket used for sending the responses
 /// * `socket_addr` - The socket address of the connection (Target for the response)
-/// * `buffer`      - Buffer of bytes recieved from the socket
+/// * `buffer`      - Buffer of bytes received from the socket
 async fn handle(socket: Arc<UdpSocket>, socket_addr: SocketAddr, buffer: Box<[u8]>) {
     // Extract the IPv4 address from the socket address (Fallback to 0.0.0.0)
     let socket_ip = match socket_addr {
@@ -95,7 +95,7 @@ async fn public_address() -> Option<Ipv4Addr> {
         }
     }
 
-    // Hold the write lock to prevent others from attempting to update aswell
+    // Hold the write lock to prevent others from attempting to update as well
     let cached = &mut *PUBLIC_ADDR_CACHE.write().await;
 
     // API addresses for IP lookup

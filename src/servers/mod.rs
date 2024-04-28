@@ -37,7 +37,7 @@ pub fn has_server_tasks() -> bool {
     !values.is_empty()
 }
 
-/// Spawns a server related task future onto tokios runtime and
+/// Spawns a server related task future onto the tokio runtime and
 /// adds the abort handle for the task to the task collection
 ///
 /// ## Arguments

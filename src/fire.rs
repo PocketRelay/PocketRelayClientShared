@@ -125,7 +125,7 @@ impl Decoder for FireCodec {
             // Use the existing frame
             current_frame
         } else {
-            // Ensure there is atleast enough bytes for the header
+            // Ensure there is at least enough bytes for the header
             if src.len() < Self::MIN_HEADER_SIZE {
                 return Ok(None);
             }

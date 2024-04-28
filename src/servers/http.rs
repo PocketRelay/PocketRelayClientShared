@@ -42,8 +42,8 @@ pub async fn start_http_server(ctx: Arc<ClientContext>) -> std::io::Result<()> {
         .map_err(|err| std::io::Error::new(ErrorKind::Other, err))
 }
 
-/// Handles an HTTP request from the HTTP server proxying it along
-/// to the Pocket Relay server
+/// Handles an HTTP request from the HTTP acting as a proxy
+/// for the Pocket Relay server
 ///
 /// ## Arguments
 /// * `request` - The HTTP request
