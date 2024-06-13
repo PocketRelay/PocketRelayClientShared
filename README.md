@@ -1,4 +1,4 @@
-# Pocket Realy Client Shared
+# Pocket Relay Client Shared
 
 ![License](https://img.shields.io/github/license/PocketRelay/PocketRelayClientShared?style=for-the-badge)
 ![Build](https://img.shields.io/github/actions/workflow/status/PocketRelay/PocketRelayClientShared/build.yml?style=for-the-badge)
