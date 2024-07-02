@@ -226,6 +226,29 @@ impl Tunnel {
             return Poll::Ready(TunnelReadState::Stop);
         };
 
+        if message.index == 255 {
+            // Write a ping response if we aren't already writing another message
+            if let TunnelWriteState::Recv = self.write_state {
+                // Move to a writing state
+                self.write_state = TunnelWriteState::Write(Some(TunnelMessage {
+                    index: 255,
+                    message: Bytes::new(),
+                }));
+
+                // Poll the write state
+                if let Poll::Ready(next_state) = self.poll_write_state(cx) {
+                    self.write_state = next_state;
+
+                    // Tunnel has stopped
+                    if let TunnelWriteState::Stop = self.write_state {
+                        return Poll::Ready(TunnelReadState::Stop);
+                    }
+                }
+            }
+
+            return Poll::Ready(TunnelReadState::Continue);
+        }
+
         // Get the handle to use within the connection pool
         let handle = self.pool.get(message.index as usize);
 
@@ -491,6 +514,13 @@ mod codec {
     //! Length: 16-bits. Determines the size in bytes of the payload that follows
     //!
     //! Payload: Variable length. The message bytes payload of `Length`
+    //!
+    //!
+    //! ## Keep alive
+    //!
+    //! The server will send keep-alive messages, these are in the same
+    //! format as the packet above. However, the index will always be 255
+    //! and the payload will be empty.
 
     use bytes::{Buf, BufMut, Bytes};
     use tokio_util::codec::{Decoder, Encoder};
