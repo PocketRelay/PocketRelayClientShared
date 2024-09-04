@@ -11,4 +11,6 @@ pub struct ClientContext {
     pub base_url: Url,
     /// Optional association token
     pub association: Option<String>,
+    /// Optional tunnel port for tunnel V2 if available
+    pub tunnel_port: Option<u16>,
 }

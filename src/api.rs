@@ -95,6 +95,8 @@ struct ServerDetails {
     ident: Option<String>,
     /// Association token if the server supports providing one
     association: Option<String>,
+    /// Tunnel port if the server provides one
+    tunnel_port: Option<u16>,
 }
 
 /// Data from completing a lookup contains the resolved address
@@ -108,6 +110,8 @@ pub struct LookupData {
     pub version: Version,
     /// Association token if the server supports providing one
     pub association: Option<String>,
+    /// Tunnel port if the server provides one
+    pub tunnel_port: Option<u16>,
 }
 
 /// Errors that can occur while looking up a server
@@ -229,6 +233,7 @@ pub async fn lookup_server(
         url,
         version: details.version,
         association: details.association,
+        tunnel_port: details.tunnel_port,
     })
 }
 
