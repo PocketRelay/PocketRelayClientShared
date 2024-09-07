@@ -298,6 +298,11 @@ impl Tunnel {
         let buffer = read_buffer.filled();
         let mut reader = MessageReader::new(buffer);
 
+        let header = match MessageHeader::read(&mut reader) {
+            Ok(value) => value,
+            Err(_) => return Poll::Ready(TunnelReadState::Stop),
+        };
+
         let message = match TunnelMessage::read(&mut reader) {
             Ok(value) => value,
             Err(_) => return Poll::Ready(TunnelReadState::Stop),
@@ -706,6 +711,7 @@ mod codec {
         }
     }
 
+    #[derive(Debug)]
     pub enum TunnelMessage {
         /// Client is requesting to initiate a connection
         Initiate {
