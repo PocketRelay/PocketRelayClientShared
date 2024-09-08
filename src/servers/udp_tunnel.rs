@@ -26,7 +26,7 @@ use tokio::{
     io::ReadBuf,
     net::UdpSocket,
     sync::mpsc,
-    time::{sleep, timeout},
+    time::{interval_at, sleep, timeout, Instant, Interval, MissedTickBehavior},
     try_join,
 };
 
@@ -184,6 +184,14 @@ async fn create_tunnel(
         .map_err(UdpTunnelError::AllocateSocketPool)?;
     debug!("Allocated tunnel pool");
 
+    let now = Instant::now();
+
+    // Create the interval to track keep alive checking
+    let keep_alive_start = now + KEEP_ALIVE_DELAY;
+    let mut keep_alive_interval = interval_at(keep_alive_start, KEEP_ALIVE_DELAY);
+
+    keep_alive_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
     // Start the tunnel
     Tunnel {
         socket,
@@ -192,10 +200,10 @@ async fn create_tunnel(
         pool,
         write_state: Default::default(),
         read_buffer: [0u8; u16::MAX as usize],
+        last_keep_alive: now,
+        keep_alive_interval,
     }
     .await;
-
-    // TODO: Handle connection lost
 
     Ok(())
 }
@@ -274,6 +282,13 @@ async fn handshake_tunnel(socket: &UdpSocket, association: &str) -> Result<u32, 
     }
 }
 
+/// Delay between each keep-alive check
+const KEEP_ALIVE_DELAY: Duration = Duration::from_secs(10);
+
+/// When this duration elapses between keep-alive checks for a connection
+/// the connection is considered to be dead (4 missed keep-alive check intervals)
+const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(KEEP_ALIVE_DELAY.as_secs() * 4);
+
 /// Represents a tunnel and its pool of connections that it can
 /// send data to and receive data from
 struct Tunnel {
@@ -291,6 +306,10 @@ struct Tunnel {
     write_state: TunnelWriteState,
     /// Buffer for reading
     read_buffer: [u8; u16::MAX as usize],
+    /// Last time a keep-alive message was received through the tunnel
+    last_keep_alive: Instant,
+    /// Interval for polling connection alive checks
+    keep_alive_interval: Interval,
 }
 
 /// Holds the state for the current writing progress for a [`Tunnel`]
@@ -365,6 +384,20 @@ impl Tunnel {
     ///
     /// Should be repeatedly called until it no-longer returns [`Poll::Ready`]
     fn poll_read_state(&mut self, cx: &mut Context<'_>) -> Poll<TunnelReadState> {
+        // Poll for keep alive
+        if self.keep_alive_interval.poll_tick(cx).is_ready() {
+            debug!("checking connection alive");
+
+            let now = Instant::now();
+
+            let last_alive = self.last_keep_alive.duration_since(now);
+            if last_alive > KEEP_ALIVE_TIMEOUT {
+                // Connection to the server has timed out as no keep alive messages were
+                // given by the server
+                return Poll::Ready(TunnelReadState::Stop);
+            }
+        }
+
         // Try receive a message from the `io`
         if ready!(Pin::new(&mut self.socket).poll_recv_ready(cx)).is_err() {
             // Cannot read next message stop the tunnel
@@ -403,6 +436,8 @@ impl Tunnel {
 
             // Reply to keep-alive message
             TunnelMessage::KeepAlive => {
+                self.last_keep_alive = Instant::now();
+
                 self.write_state = TunnelWriteState::Write(Some(TunnelMessage::KeepAlive));
 
                 // Poll the write state
