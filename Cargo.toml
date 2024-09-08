@@ -10,6 +10,9 @@ repository = "https://github.com/PocketRelay/PocketRelayClientShared"
 
 
 [dependencies]
+# Shared UDP tunnel protocol
+pocket-relay-udp-tunnel = { version = "0" }
+
 # Logging
 log = "0.4"
 
