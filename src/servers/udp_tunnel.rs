@@ -14,7 +14,6 @@ use pocket_relay_udp_tunnel::{
 };
 use std::{
     future::Future,
-    io::ErrorKind,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
     sync::Arc,
@@ -142,11 +141,8 @@ pub async fn start_udp_tunnel_server(
     }
 
     Err(last_error
-        .map(|err| std::io::Error::new(ErrorKind::Other, err))
-        .unwrap_or(std::io::Error::new(
-            ErrorKind::Other,
-            "Reached error connect limit",
-        )))
+        .map(std::io::Error::other)
+        .unwrap_or(std::io::Error::other("Reached error connect limit")))
 }
 
 /// Creates a new tunnel

@@ -127,7 +127,7 @@ fn xor_cipher(input: &[u8], key: &[u8]) -> Vec<u8> {
         // Iterate along-side the key
         .zip(key.iter().cycle().copied())
         // Process the next value using the key
-        .map(|(data, key)| ((data ^ key) % 0x80))
+        .map(|(data, key)| (data ^ key) % 0x80)
         // Collect the processed bytes
         .collect()
 }

@@ -18,7 +18,6 @@ use log::{debug, error};
 use reqwest::Upgraded;
 use std::{
     future::Future,
-    io::ErrorKind,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
     sync::Arc,
@@ -85,10 +84,7 @@ pub async fn start_tunnel_server(ctx: Arc<ClientContext>) -> std::io::Result<()>
         tokio::time::sleep(reconnect_time).await;
     }
 
-    Err(last_error.unwrap_or(std::io::Error::new(
-        ErrorKind::Other,
-        "Reached error connect limit",
-    )))
+    Err(last_error.unwrap_or(std::io::Error::other("Reached error connect limit")))
 }
 
 /// Creates a new tunnel
@@ -103,7 +99,7 @@ async fn create_tunnel(ctx: Arc<ClientContext>, association: &str) -> std::io::R
         // Wrap the tunnel with the [`TunnelCodec`] framing
         .map(|io| Framed::new(io, TunnelCodec::default()))
         // Wrap the error into an [`std::io::Error`]
-        .map_err(|err| std::io::Error::new(ErrorKind::Other, err))?;
+        .map_err(std::io::Error::other)?;
     debug!("Created server tunnel");
 
     // Allocate the socket pool for the tunnel
@@ -496,7 +492,7 @@ mod codec {
     //! Tunnel message frames are as follows:
     //!
     //! ```text
-    //!  0                   1                   2                      
+    //!  0                   1                   2
     //!  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3
     //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     //! |     Index     |            Length             |

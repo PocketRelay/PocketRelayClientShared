@@ -12,7 +12,6 @@ use hyper::{
 use log::error;
 use std::{
     convert::Infallible,
-    io::ErrorKind,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::Arc,
 };
@@ -37,9 +36,7 @@ pub async fn start_http_server(ctx: Arc<ClientContext>) -> std::io::Result<()> {
 
     let server = Server::bind(&addr).serve(make_svc);
 
-    server
-        .await
-        .map_err(|err| std::io::Error::new(ErrorKind::Other, err))
+    server.await.map_err(std::io::Error::other)
 }
 
 /// Handles an HTTP request from the HTTP acting as a proxy
