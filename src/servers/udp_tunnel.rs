@@ -6,6 +6,7 @@
 
 use crate::{
     ctx::ClientContext,
+    events::TunnelEvent,
     servers::{spawn_server_task, GAME_HOST_PORT, RANDOM_PORT, TUNNEL_HOST_PORT},
 };
 use log::{debug, error};
@@ -90,6 +91,7 @@ pub enum UdpTunnelError {
 pub async fn start_udp_tunnel_server(
     ctx: Arc<ClientContext>,
     tunnel_port: u16,
+    event_tx: mpsc::UnboundedSender<TunnelEvent>,
 ) -> std::io::Result<()> {
     let host = match ctx.base_url.host() {
         Some(value) => value.to_string(),
@@ -111,25 +113,27 @@ pub async fn start_udp_tunnel_server(
     // Looping to attempt reconnecting if lost
     while attempt_errors < MAX_ERROR_ATTEMPTS {
         // Create the tunnel (Future will end if tunnel stopped)
-        let reconnect_time = if let Err(err) = create_tunnel(&host, tunnel_port, association).await
-        {
-            error!("Failed to create tunnel: {}", err);
+        let reconnect_time =
+            if let Err(err) = create_tunnel(&host, tunnel_port, association, &event_tx).await {
+                error!("Failed to create tunnel: {}", err);
 
-            // Set last error
-            last_error = Some(err);
+                // Set last error
+                last_error = Some(err);
 
-            // Increase error attempts
-            attempt_errors += 1;
+                // Increase error attempts
+                attempt_errors += 1;
 
-            // Error should be delayed by the number of errors already hit
-            Duration::from_millis(1000 * attempt_errors as u64)
-        } else {
-            // Reset error attempts
-            attempt_errors = 0;
+                // Error should be delayed by the number of errors already hit
+                Duration::from_millis(1000 * attempt_errors as u64)
+            } else {
+                // Reset error attempts
+                attempt_errors = 0;
 
-            // Non errored reconnect can be quick
-            Duration::from_millis(1000)
-        };
+                // Non errored reconnect can be quick
+                Duration::from_millis(1000)
+            };
+
+        _ = event_tx.send(TunnelEvent::RetryConnect);
 
         debug!(
             "Next tunnel create attempt in: {}s",
@@ -139,6 +143,8 @@ pub async fn start_udp_tunnel_server(
         // Wait before attempting to re-create the tunnel
         tokio::time::sleep(reconnect_time).await;
     }
+
+    _ = event_tx.send(TunnelEvent::Error);
 
     Err(last_error
         .map(std::io::Error::other)
@@ -155,11 +161,16 @@ async fn create_tunnel(
     host: &str,
     tunnel_port: u16,
     association: &str,
+    event_tx: &mpsc::UnboundedSender<TunnelEvent>,
 ) -> Result<(), UdpTunnelError> {
+    _ = event_tx.send(TunnelEvent::Creating);
+
     // Bind a local udp socket
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
         .await
         .map_err(UdpTunnelError::Bind)?;
+
+    _ = event_tx.send(TunnelEvent::Handshaking);
 
     // Map connection to remote tunnel server
     socket
@@ -170,6 +181,7 @@ async fn create_tunnel(
     debug!("initiating tunnel: {}:{}", host, tunnel_port);
 
     let tunnel_id = attempt_tunnel_handshake(&socket, association).await?;
+    _ = event_tx.send(TunnelEvent::Connected);
 
     debug!("created server tunnel: {}", tunnel_id);
 

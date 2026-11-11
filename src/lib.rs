@@ -17,6 +17,7 @@ pub use url::Url;
 
 pub mod api;
 pub mod ctx;
+pub mod events;
 pub mod fire;
 pub mod servers;
 pub mod update;
