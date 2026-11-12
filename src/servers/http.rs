@@ -4,17 +4,20 @@
 
 use super::HTTP_PORT;
 use crate::{api::proxy_http_request, ctx::ClientContext};
+use bytes::Bytes;
+use http_body_util::Full;
 use hyper::{
-    http::uri::PathAndQuery,
-    service::{make_service_fn, service_fn},
-    Body, Request, Response, Server, StatusCode,
+    body::Incoming, http::uri::PathAndQuery, server::conn::http1, service::service_fn, Request,
+    Response, StatusCode,
 };
+use hyper_util::rt::TokioIo;
 use log::error;
 use std::{
     convert::Infallible,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::Arc,
 };
+use tokio::net::TcpListener;
 
 /// Starts the HTTP proxy server
 ///
@@ -23,20 +26,23 @@ use std::{
 pub async fn start_http_server(ctx: Arc<ClientContext>) -> std::io::Result<()> {
     // Create the socket address the server will bind too
     let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, HTTP_PORT));
+    let listener = TcpListener::bind(addr).await?;
 
-    // Create service that uses the `handle function`
-    let make_svc = make_service_fn(move |_conn| {
+    loop {
+        let (stream, _) = listener.accept().await?;
+
+        let io = TokioIo::new(stream);
         let ctx = ctx.clone();
 
-        async move {
-            // service_fn converts our function into a `Service`
-            Ok::<_, Infallible>(service_fn(move |request| handle(request, ctx.clone())))
-        }
-    });
-
-    let server = Server::bind(&addr).serve(make_svc);
-
-    server.await.map_err(std::io::Error::other)
+        tokio::task::spawn(async move {
+            if let Err(err) = http1::Builder::new()
+                .serve_connection(io, service_fn(move |request| handle(request, ctx.clone())))
+                .await
+            {
+                eprintln!("Error serving connection: {:?}", err);
+            }
+        });
+    }
 }
 
 /// Handles an HTTP request from the HTTP acting as a proxy
@@ -46,9 +52,9 @@ pub async fn start_http_server(ctx: Arc<ClientContext>) -> std::io::Result<()> {
 /// * `request` - The HTTP request
 /// * `ctx`     - The client context
 async fn handle(
-    request: Request<Body>,
+    request: Request<Incoming>,
     ctx: Arc<ClientContext>,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<Full<Bytes>>, Infallible> {
     let path_and_query = request
         .uri()
         // Extract the path and query portion of the url

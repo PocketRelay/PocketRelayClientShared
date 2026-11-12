@@ -1,11 +1,12 @@
 //! API logic for HTTP requests that are sent to the Pocket Relay server
 
 use crate::{servers::HTTP_PORT, MIN_SERVER_VERSION};
+use bytes::Bytes;
+use http_body_util::Full;
 use hyper::{
     header::{self, HeaderName, HeaderValue},
-    Body, HeaderMap, Response,
+    HeaderMap, Response,
 };
-use log::error;
 use reqwest::{Client, Identity, Upgraded};
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -373,7 +374,7 @@ pub enum ProxyError {
 pub async fn proxy_http_request(
     http_client: &reqwest::Client,
     url: Url,
-) -> Result<Response<Body>, ProxyError> {
+) -> Result<Response<Full<Bytes>>, ProxyError> {
     // Send the HTTP request and get its response
     let response = http_client
         .get(url)
@@ -389,7 +390,7 @@ pub async fn proxy_http_request(
     let body: bytes::Bytes = response.bytes().await.map_err(ProxyError::BodyFailed)?;
 
     // Create new response from the proxy response
-    let mut response = Response::new(Body::from(body));
+    let mut response = Response::new(Full::new(body));
     *response.status_mut() = status;
     *response.headers_mut() = headers;
 
