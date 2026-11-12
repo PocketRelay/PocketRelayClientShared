@@ -1,6 +1,6 @@
 [package]
 name = "pocket-relay-client-shared"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 description = "Shared logic for pocket relay client variants"
 authors = ["Jacobtread <jacobtread@gmail.com>"]
